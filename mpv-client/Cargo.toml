@@ -1,6 +1,6 @@
 [package]
 name = "mpv-client-cross"
-version = "1.2.3"
+version = "1.2.4"
 edition.workspace = true
 authors.workspace = true
 description = "Bindings for libmpv client API that allow you to create plugins for MPV in Rust"

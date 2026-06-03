@@ -107,12 +107,14 @@ pub enum Event {
 pub struct Property(*const mpv_event_property);
 
 /// Data associated with `Event::LogMessage`.
+#[allow(dead_code)]
 pub struct LogMessage(*const mpv_event_log_message);
 
 /// Data associated with `Event::StartFile`.
 pub struct StartFile(*const mpv_event_start_file);
 
 /// Data associated with `Event::EndFile`.
+#[allow(dead_code)]
 pub struct EndFile(*const mpv_event_end_file);
 
 /// Data associated with `Event::ClientMessage`.

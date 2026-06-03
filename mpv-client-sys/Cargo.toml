@@ -23,7 +23,7 @@ bindgen = [
 [build-dependencies]
 bindgen = { workspace = true, optional = true }
 
-[target.'cfg(target_os = "windows")'.build-dependencies]
+[target.'cfg(any(target_os = "windows", target_os = "android"))'.build-dependencies]
 syn = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
 proc-macro2 = { workspace = true, optional = true }

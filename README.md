@@ -6,7 +6,8 @@ Bindings for libmpv client API that allow you to create plugins for MPV in Rust.
 > This is a maintained fork of the original [TheCactusVert/mpv-client](https://github.com/TheCactusVert/mpv-client). 
 > 
 > **Key improvements in this fork:**
-> * **Windows Support:** Added out-of-the-box support for Windows compilation (via MPV_CPLUGIN_DYNAMIC_SYM [linkage-to-libmpv](https://mpv.io/manual/stable/#linkage-to-libmpv)).
+> * **Windows Support:** via MPV_CPLUGIN_DYNAMIC_SYM [linkage-to-libmpv](https://mpv.io/manual/stable/#linkage-to-libmpv).
+> * **Android Support:** via MPV_CPLUGIN_DYNAMIC_SYM [linkage-to-libmpv](https://mpv.io/manual/stable/#linkage-to-libmpv).
 > * **No LLVM/Clang required:** Uses **pregenerated bindings** by default, meaning you don't need `bindgen` or a local LLVM installation during `cargo build`.
 
 ## Example

@@ -1,8 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 
-#[cfg(feature = "bindgen")]
-use std::path::Path;
+const DYN_SYM_TARGETS: [&str; 2] = ["windows", "android"];
 
 fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -10,17 +9,17 @@ fn main() {
 
     #[cfg(feature = "bindgen")]
     {
-        let mut builder = bindgen::Builder::default().header("include/client.h");
+        let bindings = bindgen::Builder::default()
+            .header("include/client.h")
+            .clang_arg("-target")
+            .clang_arg("x86_64-unknown-linux-gnu")
+            .generate()
+            .expect("Unable to generate bindings");
 
-        if target_os == "windows" {
-            builder = builder.clang_arg("-target").clang_arg("x86_64-unknown-linux-gnu");
-        }
-
-        let bindings = builder.generate().expect("Unable to generate bindings");
         let out_file = out_path.join("bindings.rs");
         bindings.write_to_file(&out_file).expect("Couldn't write bindings!");
 
-        if target_os == "windows" {
+        if DYN_SYM_TARGETS.contains(&target_os.as_str()) {
             rewrite_dynamic_sym_bindings(&out_file);
         }
     }
@@ -29,8 +28,8 @@ fn main() {
     {
         let crate_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-        let src = if target_os == "windows" {
-            crate_path.join("pregenerated_bindings_windows.rs")
+        let src = if DYN_SYM_TARGETS.contains(&target_os.as_str()) {
+            crate_path.join("pregenerated_bindings_dyn_sym.rs")
         } else {
             crate_path.join("pregenerated_bindings.rs")
         };
@@ -40,7 +39,7 @@ fn main() {
 }
 
 #[cfg(feature = "bindgen")]
-fn rewrite_dynamic_sym_bindings(path: &Path) {
+fn rewrite_dynamic_sym_bindings(path: &std::path::Path) {
     use std::fs;
 
     use proc_macro2::TokenStream;

@@ -40,9 +40,8 @@ use ffi::{
     mpv_unobserve_property, mpv_wait_event,
 };
 
-use crate::logging::MpvLogger;
 use crate::node::from_mpv_node;
-use crate::options::CoercingStr;
+use crate::options::CoercingString;
 
 #[cfg(feature = "macros")]
 pub use mpv_client_macros::main;
@@ -403,7 +402,7 @@ impl Handle {
     where
         T: DeserializeOwned + Default,
     {
-        let client_name = self.name();
+        let plugin_name = self.name();
         let mut raw_map = HashMap::new();
 
         let Node::String(config_dir) = self.command_ret(["expand-path", "~~/"]).unwrap() else {
@@ -412,7 +411,7 @@ impl Handle {
 
         let config_path = PathBuf::from(config_dir)
             .join("script-opts")
-            .join(format!("{client_name}.conf"));
+            .join(format!("{plugin_name}.conf"));
 
         if config_path.exists()
             && let Ok(content) = fs::read_to_string(config_path)
@@ -430,10 +429,10 @@ impl Handle {
         }
 
         let Node::Map(script_opts) = self.get_property::<Node>("script-opts").unwrap() else {
-            panic!("'script-opts' must return a Map variant")
+            unreachable!("'script-opts' always return a Map variant")
         };
 
-        let prefix = format!("{client_name}-");
+        let prefix = format!("{plugin_name}-");
         for (full_key, node_value) in script_opts {
             if full_key.starts_with(&prefix) {
                 let clean_key = &full_key[prefix.len()..];
@@ -444,16 +443,16 @@ impl Handle {
             }
         }
 
-        let deserializer_map: HashMap<String, CoercingStr> =
-            raw_map.iter().map(|(k, v)| (k.clone(), CoercingStr(v))).collect();
+        let deserializer_map: HashMap<String, CoercingString> =
+            raw_map.into_iter().map(|(k, v)| (k, CoercingString(v))).collect();
 
         let map_deserializer = de::value::MapDeserializer::new(deserializer_map.into_iter());
 
         T::deserialize(map_deserializer).unwrap_or_default()
     }
 
-    pub fn init_logger(&self) {
-        logging::init(self);
+    pub fn init_logger(&self) -> std::result::Result<(), log::SetLoggerError> {
+        logging::init(self)
     }
 }
 

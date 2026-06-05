@@ -1,6 +1,6 @@
 use serde::de::{self, IntoDeserializer};
 
-pub struct CoercingStr<'a>(pub &'a str);
+pub struct CoercingString(pub String);
 
 macro_rules! impl_deserialize_num {
     ($method:ident, $visit:ident, $type:ty) => {
@@ -14,14 +14,14 @@ macro_rules! impl_deserialize_num {
     };
 }
 
-impl<'de> de::Deserializer<'de> for CoercingStr<'_> {
+impl<'de> de::Deserializer<'de> for CoercingString {
     type Error = de::value::Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_str(self.0)
+        visitor.visit_str(&self.0)
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -52,14 +52,14 @@ impl<'de> de::Deserializer<'de> for CoercingStr<'_> {
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_str(self.0)
+        visitor.visit_str(&self.0)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_str(self.0)
+        visitor.visit_str(&self.0)
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -87,7 +87,7 @@ impl<'de> de::Deserializer<'de> for CoercingStr<'_> {
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_enum(EnumDeserializer { val: self.0 })
+        visitor.visit_enum(EnumDeserializer { val: &self.0 })
     }
 }
 
@@ -143,7 +143,7 @@ impl<'de> de::VariantAccess<'de> for EnumDeserializer<'_> {
     }
 }
 
-impl IntoDeserializer<'_, de::value::Error> for CoercingStr<'_> {
+impl IntoDeserializer<'_, de::value::Error> for CoercingString {
     type Deserializer = Self;
     fn into_deserializer(self) -> Self::Deserializer {
         self

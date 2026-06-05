@@ -1,7 +1,7 @@
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write as _};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
@@ -62,7 +62,7 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
 
     let path_log_file = mp.get_property::<String>("log-file").unwrap();
     let path_log_file = if path_log_file.starts_with('~') {
-        let node = mp.command_ret(&["expand-path", &path_log_file]).unwrap();
+        let node = mp.command_ret(["expand-path", &path_log_file]).unwrap();
 
         let Node::String(expanded) = node else {
             unreachable!("'expand-path' always return a String variant")
@@ -86,23 +86,22 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
                 .expect("cannot parse to f64"),
         );
 
-        let log_file_suffix = format!("-{module}");
+        let suffix = format!("-{module}");
         match path_log_file.rfind('.') {
             Some(dot_index) => match path_log_file.rfind(['/', '\\']) {
                 Some(slash_index) => {
                     if dot_index < slash_index {
-                        path_log_file.push_str(&log_file_suffix);
+                        path_log_file.push_str(&suffix);
                     } else {
-                        path_log_file.insert_str(dot_index, &log_file_suffix);
+                        path_log_file.insert_str(dot_index, &suffix);
                     }
                 }
-                None => path_log_file.insert_str(dot_index, &log_file_suffix),
+                None => path_log_file.insert_str(dot_index, &suffix),
             },
-            None => path_log_file.push_str(&log_file_suffix),
+            None => path_log_file.push_str(&suffix),
         }
 
-        let path = PathBuf::from(path_log_file);
-        let file = Mutex::new(File::create(&path).expect("failed to create log file"));
+        let file = Mutex::new(File::create(&path_log_file).expect("failed to create log file"));
         let start_time = now - last_time;
         LogFile { file, start_time }
     });

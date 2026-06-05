@@ -29,14 +29,12 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
-expect_used = "warn"
 unwrap_used = "warn"
 panic = "warn"
 multiple_crate_versions = "allow"
 mod_module_files = "warn"
 module_name_repetitions = "warn"
 partial_pub_fields = "warn"
-print_stderr = "warn"
 print_stdout = "warn"
 rc_buffer = "warn"
 rc_mutex = "warn"

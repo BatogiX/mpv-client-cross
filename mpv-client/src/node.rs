@@ -4,7 +4,7 @@ use super::{
     mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_STRING, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list,
 };
 use std::collections::HashMap;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 use std::slice;
 
@@ -17,8 +17,8 @@ pub enum Node {
     Double(f64),
     Bool(bool),
     ByteArray(Vec<u8>),
-    Array(Vec<Node>),
-    Map(HashMap<String, Node>),
+    Array(Vec<Self>),
+    Map(HashMap<String, Self>),
 }
 
 pub fn from_mpv_node(node: &mut mpv_node) -> Node {
@@ -84,14 +84,14 @@ pub fn to_mpv_node(node: &Node) -> *mut mpv_node {
         }
         Node::Bool(b) => {
             mpv_node.format = mpv_format_MPV_FORMAT_FLAG;
-            mpv_node.u.flag = if *b { 1 } else { 0 };
+            mpv_node.u.flag = i32::from(*b);
         }
         Node::Array(arr) => {
             mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
             let values: Vec<_> = arr.iter().map(to_mpv_node).collect();
             let list = Box::new(mpv_node_list {
                 num: values.len() as i32,
-                values: Box::into_raw(values.into_boxed_slice()) as *mut mpv_node,
+                values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
                 keys: std::ptr::null_mut(),
             });
             mpv_node.u.list = Box::into_raw(list);
@@ -108,8 +108,8 @@ pub fn to_mpv_node(node: &Node) -> *mut mpv_node {
 
             let list = Box::new(mpv_node_list {
                 num: keys.len() as i32,
-                keys: Box::into_raw(keys.into_boxed_slice()) as *mut *mut c_char,
-                values: Box::into_raw(values.into_boxed_slice()) as *mut mpv_node,
+                keys: Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>(),
+                values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
             });
             mpv_node.u.list = Box::into_raw(list);
         }
@@ -119,11 +119,9 @@ pub fn to_mpv_node(node: &Node) -> *mut mpv_node {
                 size: vec.len(),
                 data: unsafe { libc::malloc(vec.len()) },
             });
-            if ba.data.is_null() {
-                panic!("Failed to allocate memory for byte array");
-            }
+            assert!(!ba.data.is_null(), "Failed to allocate memory for byte array");
             unsafe {
-                ptr::copy_nonoverlapping(vec.as_ptr(), ba.data as *mut u8, vec.len());
+                ptr::copy_nonoverlapping(vec.as_ptr(), ba.data.cast::<u8>(), vec.len());
             }
             mpv_node.u.ba = Box::into_raw(ba);
         }

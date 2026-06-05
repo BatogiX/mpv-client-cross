@@ -16,21 +16,21 @@ impl Format for String {
     const MPV_FORMAT: u32 = 1;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        let ptr = ptr as *const *const c_char;
-        Ok(unsafe { CStr::from_ptr(*ptr) }.to_str()?.to_string())
+        let ptr = ptr.cast::<*const c_char>();
+        Ok(unsafe { CStr::from_ptr(*ptr) }.to_str()?.to_owned())
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let str = CString::new::<String>(self)?;
-        fun(&str.as_ptr() as *const *const c_char as *mut c_void)
+        let str = CString::new::<Self>(self)?;
+        fun(std::ptr::from_ref::<*const c_char>(&str.as_ptr()) as *mut c_void)
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut ptr: *mut c_char = std::ptr::null_mut();
-        fun(&mut ptr as *mut _ as *mut c_void).and_then(|()| unsafe {
+        fun((&raw mut ptr).cast::<c_void>()).and_then(|()| unsafe {
             let str = CStr::from_ptr(ptr);
-            let str = str.to_str().map(|s| s.to_owned());
-            mpv_free(ptr as *mut c_void);
+            let str = str.to_str().map(std::borrow::ToOwned::to_owned);
+            mpv_free(ptr.cast::<c_void>());
             Ok(str?)
         })
     }
@@ -40,17 +40,17 @@ impl Format for bool {
     const MPV_FORMAT: u32 = 3;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(unsafe { *(ptr as *const c_int) != 0 })
+        Ok(unsafe { *ptr.cast::<c_int>() != 0 })
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let data = self as c_int;
-        fun(&data as *const _ as *mut c_void)
+        let data = c_int::from(self);
+        fun(&raw const data as *mut c_void)
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
-        let mut data = Self::default() as c_int;
-        fun(&mut data as *mut _ as *mut c_void).map(|()| data != 0)
+        let mut data = c_int::from(Self::default());
+        fun((&raw mut data).cast::<c_void>()).map(|()| data != 0)
     }
 }
 
@@ -58,16 +58,16 @@ impl Format for i64 {
     const MPV_FORMAT: u32 = 4;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(unsafe { *(ptr as *const Self) })
+        Ok(unsafe { *ptr.cast::<Self>() })
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        fun(&self as *const _ as *mut c_void)
+        fun(&raw const self as *mut c_void)
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut data = Self::default();
-        fun(&mut data as *mut _ as *mut c_void).map(|()| data)
+        fun((&raw mut data).cast::<c_void>()).map(|()| data)
     }
 }
 
@@ -75,16 +75,16 @@ impl Format for f64 {
     const MPV_FORMAT: u32 = 5;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(unsafe { *(ptr as *const Self) })
+        Ok(unsafe { *ptr.cast::<Self>() })
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        fun(&self as *const _ as *mut c_void)
+        fun(&raw const self as *mut c_void)
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut data = Self::default();
-        fun(&mut data as *mut _ as *mut c_void).map(|()| data)
+        fun((&raw mut data).cast::<c_void>()).map(|()| data)
     }
 }
 
@@ -93,7 +93,7 @@ impl Format for Node {
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         if ptr.is_null() {
-            return Ok(Node::None);
+            return Ok(Self::None);
         }
 
         let node = unsafe { &mut *(ptr as *mut mpv_node) };
@@ -104,7 +104,7 @@ impl Format for Node {
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
         let mpv_node_ptr = to_mpv_node(&self);
-        let res = fun(mpv_node_ptr as *mut c_void);
+        let res = fun(mpv_node_ptr.cast::<c_void>());
         unsafe { mpv_free_node_contents(mpv_node_ptr) };
         res
     }
@@ -115,9 +115,9 @@ impl Format for Node {
             u: mpv_node__bindgen_ty_1 { int64: 0 },
         };
 
-        fun(&mut node as *mut _ as *mut c_void)?;
+        fun((&raw mut node).cast::<c_void>())?;
         let result = from_mpv_node(&mut node);
-        unsafe { mpv_free_node_contents(&mut node) };
+        unsafe { mpv_free_node_contents(&raw mut node) };
         Ok(result)
     }
 }

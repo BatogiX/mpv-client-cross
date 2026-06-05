@@ -10,9 +10,17 @@ keywords.workspace = true
 readme.workspace = true
 
 [features]
+# Include nothing by default
 default = []
 bindgen = ["ffi/bindgen"]
+macros = ["mpv-client-macros"]
 
 [dependencies]
 ffi.workspace = true
+mpv-client-macros = { workspace = true, optional = true }
 libc.workspace = true
+serde.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true

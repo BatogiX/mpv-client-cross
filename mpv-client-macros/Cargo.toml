@@ -1,0 +1,20 @@
+[package]
+name = "mpv-client-cross-macros"
+version = "0.1.0"
+edition.workspace = true
+readme.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote.workspace = true
+syn.workspace = true
+proc-macro2.workspace = true
+
+[lints]
+workspace = true

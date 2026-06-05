@@ -11,7 +11,8 @@ pub struct Error(mpv_error);
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
-    pub fn new(error: mpv_error) -> Self {
+    #[must_use]
+    pub const fn new(error: mpv_error) -> Self {
         Self(error)
     }
 }

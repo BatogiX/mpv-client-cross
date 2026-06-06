@@ -1,13 +1,14 @@
 [package]
 name = "mpv-client-cross-macros"
-version = "0.1.0"
-keywords = ["mpv", "libmpv", "macros"]
-categories.workspace = true
+description = "Proc macros for mpv client bindings"
+keywords = ["mpv", "libmpv", "macros", "proc-macro"]
+categories = ["api-bindings"]
+version.workspace = true
 edition.workspace = true
-readme.workspace = true
 authors.workspace = true
-repository.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [lib]
 proc-macro = true

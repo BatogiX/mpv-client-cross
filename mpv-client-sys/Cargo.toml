@@ -1,13 +1,13 @@
 [package]
 name = "mpv-client-cross-sys"
-version = "1.2.0"
+description = "Raw bindings for libmpv client API"
+keywords = ["mpv", "libmpv", "ffi"]
+categories = ["external-ffi-bindings"]
+version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "Raw bindings for libmpv client API"
 license.workspace = true
-categories.workspace = true
 repository.workspace = true
-keywords.workspace = true
 readme.workspace = true
 build = "build.rs"
 

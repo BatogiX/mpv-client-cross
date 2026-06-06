@@ -3,7 +3,7 @@ use super::{mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_no
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 
-use super::node::{Node, from_mpv_node_value, to_mpv_node_value};
+use super::node::Node;
 
 pub trait Format: Sized + Default {
     const MPV_FORMAT: u32;
@@ -109,12 +109,12 @@ impl Format for Node {
         }
 
         let node = unsafe { &mut *(ptr as *mut mpv_node) };
-        let result = from_mpv_node_value(node);
+        let result = Self::from(node);
         Ok(result)
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mpv_node_ptr = to_mpv_node_value(&self);
+        let mpv_node_ptr = <*mut mpv_node>::from(&self);
         let res = fun(mpv_node_ptr.cast::<c_void>());
         unsafe { mpv_free_node_contents(mpv_node_ptr) };
         res
@@ -127,7 +127,7 @@ impl Format for Node {
         };
 
         fun((&raw mut node).cast::<c_void>())?;
-        let result = from_mpv_node_value(&mut node);
+        let result = Self::from(&mut node);
         unsafe { mpv_free_node_contents(&raw mut node) };
         Ok(result)
     }

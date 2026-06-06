@@ -53,15 +53,7 @@ pub struct Handle {
     inner: [mpv_handle],
 }
 
-pub struct EventQueueToken {
-    _private: (),
-}
-
-impl EventQueueToken {
-    const fn new() -> Self {
-        Self { _private: () }
-    }
-}
+pub struct EventQueueToken(*const mpv_handle);
 
 /// A type representing an owned client context.
 pub struct Client(*mut mpv_handle);
@@ -209,25 +201,18 @@ impl Handle {
     pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
         (
             unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
-            EventQueueToken::new(),
+            EventQueueToken(ptr),
         )
     }
 
-    /// # Safety
-    ///
-    /// `Handle` must have been created from a valid, non-null `mpv_handle` pointer.
     #[inline]
     #[must_use]
-    pub const unsafe fn as_ptr(&self) -> *const mpv_handle {
+    pub const fn as_ptr(&self) -> *const mpv_handle {
         self.inner.as_ptr()
     }
 
-    /// # Safety
-    ///
-    /// `Handle` must have been created from a valid, non-null `mpv_handle` pointer,
-    /// and there must be no other active mutable references to the underlying handle.
     #[inline]
-    pub const unsafe fn as_mut_ptr(&mut self) -> *mut mpv_handle {
+    pub const fn as_mut_ptr(&mut self) -> *mut mpv_handle {
         self.inner.as_mut_ptr()
     }
 
@@ -240,7 +225,7 @@ impl Handle {
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok((Client(handle), EventQueueToken::new()))
+            Ok((Client(handle), EventQueueToken(handle)))
         }
     }
 
@@ -253,7 +238,7 @@ impl Handle {
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok((Client(handle), EventQueueToken::new()))
+            Ok((Client(handle), EventQueueToken(handle)))
         }
     }
 
@@ -275,7 +260,30 @@ impl Handle {
     ///
     /// As long as the timeout is 0, this is safe to be called from mpv render API
     /// threads.
-    pub fn wait_event<'h>(&'h self, _token: &'h mut EventQueueToken, timeout: f64) -> Event<'h> {
+    ///
+    /// # Arguments
+    ///
+    /// * `_token` - An exclusive capability token (`&mut EventQueueToken`) that enforces
+    ///   the single-threaded event polling invariant at compile-time. Because it requires
+    ///   a unique mutable reference, Rust's borrow checker guarantees that no two threads
+    ///   can concurrently poll the event queue on the same handle, entirely preventing
+    ///   the race conditions mentioned above.
+    ///
+    ///   Crucially, separating this exclusive access into a dedicated token allows `self`
+    ///   to remain a shared reference (`&self`), enabling you to safely send commands
+    ///   or change properties from within the event loop or other threads concurrently.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided `EventQueueToken` is mismatched and does not belong
+    /// to this specific `Handle` instance.
+    pub fn wait_event<'h>(&'h self, token: &'h mut EventQueueToken, timeout: f64) -> Event<'h> {
+        assert_eq!(
+            self.as_ptr(),
+            token.0,
+            "mismatched EventQueueToken: this token does not belong to this MPV handle!"
+        );
+
         unsafe { Event::from_ptr(mpv_wait_event(self.as_ptr().cast_mut(), timeout)) }
     }
 
@@ -403,7 +411,7 @@ impl Handle {
     /// Returns an mpv error if the property cannot be set.
     pub fn set_property<T: Format>(&self, name: impl AsRef<str>, data: T) -> Result<()> {
         let name = CString::new(name.as_ref())?;
-        let handle = unsafe { self.as_ptr().cast_mut() };
+        let handle = self.as_ptr().cast_mut();
         data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
 
@@ -418,7 +426,7 @@ impl Handle {
     /// doesn't match the internal format.
     pub fn get_property<T: Format>(&self, name: impl AsRef<str>) -> Result<T> {
         let name = CString::new(name.as_ref())?;
-        let handle = unsafe { self.as_ptr().cast_mut() };
+        let handle = self.as_ptr().cast_mut();
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
 
@@ -538,7 +546,7 @@ impl Client {
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok((UninitializedClient(handle), EventQueueToken::new()))
+            Ok((UninitializedClient(handle), EventQueueToken(handle)))
         }
     }
 }

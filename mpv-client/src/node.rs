@@ -21,7 +21,9 @@ pub enum Node {
     Map(HashMap<String, Self>),
 }
 
-pub fn from_mpv_node(node: &mut mpv_node) -> Node {
+/// # Panics
+/// If the mpv node contains a negative count (invalid for the C API).
+pub fn from_mpv_node_value(node: &mut mpv_node) -> Node {
     match node.format {
         mpv_format_MPV_FORMAT_STRING => {
             Node::String(unsafe { CStr::from_ptr(node.u.string) }.to_string_lossy().into_owned())
@@ -31,20 +33,22 @@ pub fn from_mpv_node(node: &mut mpv_node) -> Node {
         mpv_format_MPV_FORMAT_FLAG => Node::Bool(unsafe { node.u.flag } != 0),
         mpv_format_MPV_FORMAT_NODE_ARRAY => {
             let list = unsafe { &*node.u.list };
-            let values = unsafe { slice::from_raw_parts_mut(list.values, list.num as usize) };
-            Node::Array(values.iter_mut().map(from_mpv_node).collect())
+            let values =
+                unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
+            Node::Array(values.iter_mut().map(from_mpv_node_value).collect())
         }
         mpv_format_MPV_FORMAT_NODE_MAP => {
             let list = unsafe { &*node.u.list };
-            let values = unsafe { slice::from_raw_parts_mut(list.values, list.num as usize) };
-            let keys = unsafe { slice::from_raw_parts(list.keys, list.num as usize) };
+            let values =
+                unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
+            let keys = unsafe { slice::from_raw_parts(list.keys, list.num.try_into().expect("num fits in usize")) };
             let map = keys
                 .iter()
                 .zip(values.iter_mut())
                 .filter_map(|(&k, v)| {
                     unsafe { k.as_ref() }.map(|key_ptr| {
                         let key = unsafe { CStr::from_ptr(key_ptr) }.to_string_lossy().into_owned();
-                        (key, from_mpv_node(v))
+                        (key, from_mpv_node_value(v))
                     })
                 })
                 .collect();
@@ -59,7 +63,9 @@ pub fn from_mpv_node(node: &mut mpv_node) -> Node {
     }
 }
 
-pub fn to_mpv_node(node: &Node) -> *mut mpv_node {
+/// # Panics
+/// If a node string contains a null byte or a length overflows `i32`.
+pub fn to_mpv_node_value(node: &Node) -> *mut mpv_node {
     let mut mpv_node = Box::new(mpv_node {
         format: 0,
         u: mpv_node__bindgen_ty_1 { int64: 0 },
@@ -88,9 +94,9 @@ pub fn to_mpv_node(node: &Node) -> *mut mpv_node {
         }
         Node::Array(arr) => {
             mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
-            let values: Vec<_> = arr.iter().map(to_mpv_node).collect();
+            let values: Vec<_> = arr.iter().map(to_mpv_node_value).collect();
             let list = Box::new(mpv_node_list {
-                num: values.len() as i32,
+                num: values.len().try_into().expect("len fits in i32"),
                 values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
                 keys: std::ptr::null_mut(),
             });
@@ -102,12 +108,12 @@ pub fn to_mpv_node(node: &Node) -> *mut mpv_node {
                 .iter()
                 .map(|(k, v)| {
                     let ckey = CString::new(k.as_str()).expect("CString::new failed");
-                    (ckey.into_raw(), to_mpv_node(v))
+                    (ckey.into_raw(), to_mpv_node_value(v))
                 })
                 .unzip();
 
             let list = Box::new(mpv_node_list {
-                num: keys.len() as i32,
+                num: keys.len().try_into().expect("len fits in i32"),
                 keys: Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>(),
                 values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
             });

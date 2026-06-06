@@ -1,38 +1,50 @@
 use super::Result;
 use super::{mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_node, mpv_node__bindgen_ty_1};
 
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 
-use super::node::{from_mpv_node, to_mpv_node, Node};
+use super::node::{Node, from_mpv_node_value, to_mpv_node_value};
 
 pub trait Format: Sized + Default {
     const MPV_FORMAT: u32;
+
+    /// # Errors
+    /// If the pointer does not point to a valid value of this format.
     fn from_ptr(ptr: *const c_void) -> Result<Self>;
+
+    /// # Errors
+    /// If the FFI callback fails.
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()>;
+
+    /// # Errors
+    /// If the FFI callback fails or the stored value cannot be recovered.
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self>;
 }
 
 impl Format for String {
     const MPV_FORMAT: u32 = 1;
 
+    /// # Errors
+    /// Returns an error if the C string is not valid UTF-8.
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         let ptr = ptr.cast::<*const c_char>();
         Ok(unsafe { CStr::from_ptr(*ptr) }.to_str()?.to_owned())
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let str = CString::new::<Self>(self)?;
-        fun(std::ptr::from_ref::<*const c_char>(&str.as_ptr()) as *mut c_void)
+        let cstr = CString::new(self)?;
+        let ptr = &cstr.as_ptr() as *const *const c_char;
+        fun(ptr as *mut c_void)
     }
 
+    /// # Errors
+    /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut ptr: *mut c_char = std::ptr::null_mut();
-        fun((&raw mut ptr).cast::<c_void>()).and_then(|()| unsafe {
-            let str = CStr::from_ptr(ptr);
-            let str = str.to_str().map(std::borrow::ToOwned::to_owned);
-            mpv_free(ptr.cast::<c_void>());
-            Ok(str?)
-        })
+        fun((&raw mut ptr).cast::<c_void>())?;
+        let result = unsafe { CStr::from_ptr(ptr) }.to_str().map(ToOwned::to_owned);
+        unsafe { mpv_free(ptr.cast::<c_void>()) };
+        Ok(result?)
     }
 }
 
@@ -97,13 +109,13 @@ impl Format for Node {
         }
 
         let node = unsafe { &mut *(ptr as *mut mpv_node) };
-        let result = from_mpv_node(node);
+        let result = from_mpv_node_value(node);
         unsafe { mpv_free_node_contents(node) };
         Ok(result)
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mpv_node_ptr = to_mpv_node(&self);
+        let mpv_node_ptr = to_mpv_node_value(&self);
         let res = fun(mpv_node_ptr.cast::<c_void>());
         unsafe { mpv_free_node_contents(mpv_node_ptr) };
         res
@@ -116,7 +128,7 @@ impl Format for Node {
         };
 
         fun((&raw mut node).cast::<c_void>())?;
-        let result = from_mpv_node(&mut node);
+        let result = from_mpv_node_value(&mut node);
         unsafe { mpv_free_node_contents(&raw mut node) };
         Ok(result)
     }

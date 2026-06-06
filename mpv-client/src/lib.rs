@@ -21,8 +21,8 @@ use std::path::PathBuf;
 use std::ptr::slice_from_raw_parts_mut;
 use std::{fmt, fs};
 
-pub use ffi::mpv_handle;
-use ffi::{
+pub use mpv_client_sys::mpv_handle;
+use mpv_client_sys::{
     mpv_byte_array, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret, mpv_create,
     mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error, mpv_error_MPV_ERROR_GENERIC,
     mpv_error_MPV_ERROR_NOMEM, mpv_error_MPV_ERROR_SUCCESS, mpv_error_string, mpv_event, mpv_event_client_message,
@@ -40,7 +40,7 @@ use ffi::{
     mpv_unobserve_property, mpv_wait_event,
 };
 
-use crate::node::from_mpv_node;
+use crate::node::from_mpv_node_value;
 use crate::options::CoercingString;
 
 #[cfg(feature = "macros")]
@@ -216,6 +216,9 @@ impl Handle {
         self.inner.as_mut_ptr()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the mpv API call fails.
     pub fn create_client(&mut self, name: impl AsRef<str>) -> Result<Client> {
         let name = CString::new(name.as_ref())?;
         let handle = unsafe { mpv_create_client(self.as_mut_ptr(), name.as_ptr()) };
@@ -226,6 +229,9 @@ impl Handle {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the mpv API call fails.
     pub fn create_weak_client(&mut self, name: impl AsRef<str>) -> Result<Client> {
         let name = CString::new(name.as_ref())?;
         let handle = unsafe { mpv_create_weak_client(self.as_mut_ptr(), name.as_ptr()) };
@@ -236,6 +242,9 @@ impl Handle {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the mpv API call fails.
     pub fn initialize(&mut self) -> Result<()> {
         unsafe { result!(mpv_initialize(self.as_mut_ptr())) }
     }
@@ -293,23 +302,43 @@ impl Handle {
     /// Send a command to the player. Commands are the same as those used in
     /// input.conf, except that this function takes parameters in a pre-split
     /// form.
+    ///
+    /// # Errors
+    /// Returns an mpv error if the command fails.
+    ///
+    /// # Panics
+    /// Panics if any argument contains a null byte.
     pub fn command<I, S>(&self, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let args: Vec<CString> = args.into_iter().map(|s| CString::new(s.as_ref()).unwrap()).collect();
+        let args: Vec<CString> = args
+            .into_iter()
+            .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
+            .collect();
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
         unsafe { result!(mpv_command(self.as_ptr().cast_mut(), raw_args.as_mut_ptr())) }
     }
 
+    /// Send a command and return the result as a [`Node`].
+    ///
+    /// # Errors
+    /// Returns an mpv error if the command fails, or if the result cannot be
+    /// converted to a [`Node`].
+    ///
+    /// # Panics
+    /// Panics if any argument contains a null byte.
     pub fn command_ret<I, S>(&self, args: I) -> Result<Node>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let args: Vec<CString> = args.into_iter().map(|s| CString::new(s.as_ref()).unwrap()).collect();
+        let args: Vec<CString> = args
+            .into_iter()
+            .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
+            .collect();
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
 
@@ -317,7 +346,7 @@ impl Handle {
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
 
         result!(ret)?;
-        unsafe { Ok(from_mpv_node(res.assume_init_mut())) }
+        unsafe { Ok(from_mpv_node_value(res.assume_init_mut())) }
     }
 
     /// Same as `Handle::command`, but run the command asynchronously.
@@ -333,12 +362,21 @@ impl Handle {
     /// positive.
     ///
     /// Safe to be called from mpv render API threads.
+    ///
+    /// # Errors
+    /// Returns an mpv error if the command fails.
+    ///
+    /// # Panics
+    /// Panics if any argument contains a null byte.
     pub fn command_async<I, S>(&self, reply: u64, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let args: Vec<CString> = args.into_iter().map(|s| CString::new(s.as_ref()).unwrap()).collect();
+        let args: Vec<CString> = args
+            .into_iter()
+            .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
+            .collect();
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
         unsafe {
@@ -350,6 +388,8 @@ impl Handle {
         }
     }
 
+    /// # Errors
+    /// Returns an mpv error if the property cannot be set.
     pub fn set_property<T: Format>(&self, name: impl AsRef<str>, data: T) -> Result<()> {
         let name = CString::new(name.as_ref())?;
         let handle = unsafe { self.as_ptr().cast_mut() };
@@ -362,12 +402,17 @@ impl Handle {
     /// usually will fail with `MPV_ERROR_PROPERTY_FORMAT`. In some cases, the data
     /// is automatically converted and access succeeds. For example, i64 is always
     /// converted to f64, and access using String usually invokes a string formatter.
+    /// # Errors
+    /// Returns an mpv error if the property cannot be read, or if the format
+    /// doesn't match the internal format.
     pub fn get_property<T: Format>(&self, name: impl AsRef<str>) -> Result<T> {
         let name = CString::new(name.as_ref())?;
         let handle = unsafe { self.as_ptr().cast_mut() };
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
 
+    /// # Errors
+    /// Returns an mpv error if property observation fails.
     pub fn observe_property<T: Format>(&self, reply: u64, name: impl AsRef<str>) -> Result<()> {
         let name = CString::new(name.as_ref())?;
         unsafe {
@@ -384,20 +429,28 @@ impl Handle {
     /// which the given number was passed as reply to `Handle::observe_property`.
     ///
     /// Safe to be called from mpv render API threads.
+    /// # Errors
+    /// Returns an mpv error code, or 0 on success.
     pub fn unobserve_property(&self, registered_reply: u64) -> Result<i32> {
         unsafe { result_with_code!(mpv_unobserve_property(self.as_ptr().cast_mut(), registered_reply)) }
     }
 
+    /// # Errors
+    /// Returns an mpv error if the hook cannot be added.
     pub fn hook_add(&self, reply: u64, name: &str, priority: i32) -> Result<()> {
         let name = CString::new(name)?;
         unsafe { result!(mpv_hook_add(self.as_ptr().cast_mut(), reply, name.as_ptr(), priority)) }
     }
 
+    /// # Errors
+    /// Returns an mpv error if hook continuation fails.
     pub fn hook_continue(&self, id: u64) -> Result<()> {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
 
     #[must_use]
+    /// # Panics
+    /// Panics if `expand-path` or `script-opts` commands fail or return unexpected types.
     pub fn read_options<T>(&self) -> T
     where
         T: DeserializeOwned + Default,
@@ -405,7 +458,10 @@ impl Handle {
         let plugin_name = self.name();
         let mut raw_map = HashMap::new();
 
-        let Node::String(config_dir) = self.command_ret(["expand-path", "~~/"]).unwrap() else {
+        let Node::String(config_dir) = self
+            .command_ret(["expand-path", "~~/"])
+            .expect("'expand-path ~~/' failed")
+        else {
             unreachable!("'expand-path ~~/' always return a String variant")
         };
 
@@ -428,7 +484,10 @@ impl Handle {
             }
         }
 
-        let Node::Map(script_opts) = self.get_property::<Node>("script-opts").unwrap() else {
+        let Node::Map(script_opts) = self
+            .get_property::<Node>("script-opts")
+            .expect("'script-opts' property unavailable")
+        else {
             unreachable!("'script-opts' always return a Map variant")
         };
 
@@ -451,12 +510,18 @@ impl Handle {
         T::deserialize(map_deserializer).unwrap_or_default()
     }
 
+    /// # Errors
+    /// Returns `log::SetLoggerError` if a logger is already set.
     pub fn init_logger(&self) -> std::result::Result<(), log::SetLoggerError> {
         logging::init(self)
     }
 }
 
 impl Client {
+    /// Create a new standalone mpv client.
+    ///
+    /// # Errors
+    /// Returns an error if mpv instance creation fails (out of memory).
     pub fn new() -> Result<Self> {
         let handle = unsafe { mpv_create() };
         if handle.is_null() {
@@ -466,6 +531,8 @@ impl Client {
         }
     }
 
+    /// # Errors
+    /// Returns an mpv error if initialization fails.
     pub fn initialize(self) -> Result<Self> {
         unsafe { result!(mpv_initialize(self.0)).map(|()| self) }
     }
@@ -653,10 +720,21 @@ impl ClientMessage {
     }
 
     #[must_use]
+    /// # Panics
+    /// Panics if `num_args` is negative, or if event args contain invalid UTF-8.
     pub fn args<'a>(&self) -> Vec<&'a str> {
         unsafe {
-            let args = std::slice::from_raw_parts((*self.0).args, (*self.0).num_args as usize);
-            args.iter().map(|arg| CStr::from_ptr(*arg).to_str().unwrap()).collect()
+            let args = std::slice::from_raw_parts(
+                (*self.0).args,
+                (*self.0).num_args.try_into().expect("negative num_args"),
+            );
+            args.iter()
+                .map(|arg| {
+                    CStr::from_ptr(*arg)
+                        .to_str()
+                        .expect("mpv event args contain invalid UTF-8")
+                })
+                .collect()
         }
     }
 }

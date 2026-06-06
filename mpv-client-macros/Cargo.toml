@@ -1,12 +1,13 @@
 [package]
 name = "mpv-client-cross-macros"
 version = "0.1.0"
+keywords = ["mpv", "libmpv", "macros"]
+categories.workspace = true
 edition.workspace = true
 readme.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
-keywords.workspace = true
 
 [lib]
 proc-macro = true

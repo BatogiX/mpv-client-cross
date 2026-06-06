@@ -45,7 +45,11 @@ impl Log for MpvLogger {
                 Level::Trace => "v",
             };
 
-            let elapsed = log_file.start_time.elapsed().unwrap_or_default().as_secs_f64();
+            let elapsed = log_file
+                .start_time
+                .elapsed()
+                .expect("start_time is valid")
+                .as_secs_f64();
             let log_message = format!("[{elapsed:>8.3}][{level_str}]{log_message}");
 
             if let Ok(mut file) = log_file.file.lock() {
@@ -60,12 +64,16 @@ impl Log for MpvLogger {
 pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
     let module = mp.name().to_owned();
 
-    let path_log_file = mp.get_property::<String>("log-file").unwrap();
+    let path_log_file = mp
+        .get_property::<String>("log-file")
+        .expect("log-file property must exist");
     let path_log_file = if path_log_file.starts_with('~') {
-        let node = mp.command_ret(["expand-path", &path_log_file]).unwrap();
+        let node = mp
+            .command_ret(["expand-path", &path_log_file])
+            .expect("expand-path must succeed");
 
         let Node::String(expanded) = node else {
-            unreachable!("'expand-path' always return a String variant")
+            unreachable!("'expand-path' always returns a String variant")
         };
 
         Some(expanded)
@@ -77,14 +85,9 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
 
     let log_file = path_log_file.map(|mut path_log_file| {
         let now = SystemTime::now();
-        let last_line = read_last_line(&path_log_file).unwrap();
+        let last_line = read_last_line(&path_log_file).expect("has log file");
 
-        let last_time = Duration::from_secs_f64(
-            last_line[1..=8]
-                .trim_start()
-                .parse::<f64>()
-                .expect("cannot parse to f64"),
-        );
+        let last_time = Duration::from_secs_f64(last_line[1..=8].trim_start().parse::<f64>().expect("valid timestamp"));
 
         let suffix = format!("-{module}");
         match path_log_file.rfind('.') {
@@ -120,9 +123,9 @@ fn read_last_line<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
         return Ok(String::new());
     }
 
-    let tail_size = 1024.min(file_size) as usize;
+    let tail_size = usize::try_from(1024u64.min(file_size)).expect("fits in usize");
     let mut buffer = vec![0; tail_size];
-    file.seek(SeekFrom::End(-(tail_size as i64)))?;
+    file.seek(SeekFrom::End(-(i64::try_from(tail_size).expect("fits in i64"))))?;
     file.read_exact(&mut buffer)?;
     let text = String::from_utf8_lossy(&buffer);
     let last_line = text.lines().rfind(|s| !s.trim().is_empty()).unwrap_or("");

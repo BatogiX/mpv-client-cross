@@ -4,8 +4,8 @@ use std::path::PathBuf;
 const DYN_SYM_TARGETS: [&str; 2] = ["windows", "android"];
 
 fn main() {
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let out_path = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
 
     #[cfg(feature = "bindgen")]
     {
@@ -26,7 +26,7 @@ fn main() {
 
     #[cfg(not(feature = "bindgen"))]
     {
-        let crate_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let crate_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
 
         let src = if DYN_SYM_TARGETS.contains(&target_os.as_str()) {
             crate_path.join("pregenerated_bindings_dyn_sym.rs")

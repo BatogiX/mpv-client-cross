@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 description = "Bindings for libmpv client API that allow you to create plugins for MPV in Rust"
 license.workspace = true
+categories.workspace = true
 repository.workspace = true
 keywords.workspace = true
 readme.workspace = true
@@ -12,11 +13,11 @@ readme.workspace = true
 [features]
 # Include nothing by default
 default = []
-bindgen = ["ffi/bindgen"]
+bindgen = ["mpv-client-sys/bindgen"]
 macros = ["mpv-client-macros"]
 
 [dependencies]
-ffi.workspace = true
+mpv-client-sys.workspace = true
 mpv-client-macros = { workspace = true, optional = true }
 libc.workspace = true
 serde.workspace = true

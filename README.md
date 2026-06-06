@@ -40,12 +40,12 @@ use mpv_client::{mpv_handle, Event, Handle};
 
 #[no_mangle]
 extern "C" fn mpv_open_cplugin(handle: *mut mpv_handle) -> std::os::raw::c_int {
-  let client = Handle::from_ptr(handle);
+  let mp = unsafe { Handle::from_ptr_mut(handle) };
   
-  println!("Hello world from Rust plugin {}!", client.name());
+  println!("Hello world from Rust plugin {}!", mp.name());
   
   loop {
-    match client.wait_event(-1.) {
+    match mp.wait_event(-1.) {
       Event::Shutdown => { return 0; },
       event => { println!("Got event: {}", event); },
     }
@@ -63,11 +63,11 @@ mpv-client = { version = "2.0", package = "mpv-client-cross", features = ["macro
 use mpv_client::{Event, Handle};
 
 #[mpv_client::main]
-fn main(client: &mut Handle) -> i32 {
-  log::info!("Hello world from Rust plugin {}!", client.name());
+fn main(mp: &mut Handle) -> i32 {
+  log::info!("Hello world from Rust plugin {}!", mp.name());
   
   loop {
-    match client.wait_event(-1.) {
+    match mp.wait_event(-1.) {
       Event::Shutdown => { return 0; },
       event => { log::info!("Got event: {}", event); },
     }

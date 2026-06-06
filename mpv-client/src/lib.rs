@@ -15,6 +15,7 @@ use serde::de::{self, DeserializeOwned};
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
@@ -48,6 +49,7 @@ pub use mpv_client_macros::main;
 
 /// Representation of a borrowed client context used by the client API.
 /// Every client has its own private handle.
+#[repr(transparent)]
 pub struct Handle {
     inner: [mpv_handle],
 }
@@ -57,7 +59,7 @@ pub struct Client(*mut mpv_handle);
 
 /// An enum representing the available events that can be received by
 /// `Handle::wait_event`.
-pub enum Event {
+pub enum Event<'h> {
     /// Nothing happened. Happens on timeouts or sporadic wakeups.
     None,
     /// Happens when the player quits. The player enters a state where it tries
@@ -65,10 +67,10 @@ pub enum Event {
     Shutdown,
     /// See `Handle::request_log_messages`.
     /// See also `LogMessage`.
-    LogMessage(LogMessage),
+    LogMessage(LogMessage<'h>),
     /// Reply to a `Handle::get_property_async` request.
     /// See also `Property`.
-    GetPropertyReply(Result<()>, u64, Property),
+    GetPropertyReply(Result<()>, u64, Property<'h>),
     /// Reply to a `Handle::set_property_async` request.
     /// (Unlike `GetPropertyReply`, `Property` is not used.)
     SetPropertyReply(Result<()>, u64),
@@ -77,10 +79,10 @@ pub enum Event {
     CommandReply(Result<()>, u64), // TODO mpv_event_command and mpv_node
     /// Notification before playback start of a file (before the file is loaded).
     /// See also `StartFile`.
-    StartFile(StartFile),
+    StartFile(StartFile<'h>),
     /// Notification after playback end (after the file was unloaded).
     /// See also `EndFile`.
-    EndFile(EndFile),
+    EndFile(EndFile<'h>),
     /// Notification when the file has been loaded (headers were read etc.), and
     /// decoding starts.
     FileLoaded,
@@ -89,7 +91,7 @@ pub enum Event {
     /// dispatch the message, and passes along all arguments starting from the
     /// second argument as strings.
     /// See also `ClientMessage`.
-    ClientMessage(ClientMessage),
+    ClientMessage(ClientMessage<'h>),
     /// Happens after video changed in some way. This can happen on resolution
     /// changes, pixel format changes, or video filter changes. The event is
     /// sent after the video filters and the VO are reconfigured. Applications
@@ -112,7 +114,7 @@ pub enum Event {
     PlaybackRestart,
     /// Event sent due to `mpv_observe_property()`.
     /// See also `Property`.
-    PropertyChange(u64, Property),
+    PropertyChange(u64, Property<'h>),
     /// Happens if the internal per-mpv_handle ringbuffer overflows, and at
     /// least 1 event had to be dropped. This can happen if the client doesn't
     /// read the event queue quickly enough with `Handle::wait_event`, or if the
@@ -125,28 +127,28 @@ pub enum Event {
     /// hook is invoked. If you receive this, you must handle it, and continue
     /// the hook with `Handle::hook_continue`.
     /// See also `Hook`.
-    Hook(u64, Hook),
+    Hook(u64, Hook<'h>),
 }
 
 /// Data associated with `Event::GetPropertyReply` and `Event::PropertyChange`.
-pub struct Property(*const mpv_event_property);
+pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
 
 /// Data associated with `Event::LogMessage`.
 #[allow(dead_code)]
-pub struct LogMessage(*const mpv_event_log_message);
+pub struct LogMessage<'h>(*const mpv_event_log_message, PhantomData<&'h Handle>);
 
 /// Data associated with `Event::StartFile`.
-pub struct StartFile(*const mpv_event_start_file);
+pub struct StartFile<'h>(*const mpv_event_start_file, PhantomData<&'h Handle>);
 
 /// Data associated with `Event::EndFile`.
 #[allow(dead_code)]
-pub struct EndFile(*const mpv_event_end_file);
+pub struct EndFile<'h>(*const mpv_event_end_file, PhantomData<&'h Handle>);
 
 /// Data associated with `Event::ClientMessage`.
-pub struct ClientMessage(*const mpv_event_client_message);
+pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Handle>);
 
 /// Data associated with `Event::Hook`.
-pub struct Hook(*const mpv_event_hook);
+pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
 
 macro_rules! result {
     ($f:expr) => {
@@ -182,6 +184,23 @@ macro_rules! osd_async {
 }
 
 impl Handle {
+    /// Wrap a raw `mpv_handle` as a shared reference.
+    ///
+    /// # Safety
+    ///
+    /// * `ptr` must be non-null.
+    ///
+    /// * The memory referenced by the returned `Handle` must not be freed for
+    ///   the duration of lifetime `'a`.
+    ///
+    /// * No mutable references to the same `mpv_handle` may exist for the
+    ///   duration of lifetime `'a`.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> &'a Self {
+        unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) }
+    }
+
     /// Wrap a raw `mpv_handle`
     ///
     /// This function will wrap the provided `ptr` with a `Handle` wrapper, which
@@ -194,7 +213,7 @@ impl Handle {
     /// * The memory referenced by the returned `Handle` must not be freed for
     ///   the duration of lifetime `'a`.
     #[inline]
-    pub fn from_ptr<'a>(ptr: *mut mpv_handle) -> &'a mut Self {
+    pub unsafe fn from_ptr_mut<'a>(ptr: *mut mpv_handle) -> &'a mut Self {
         unsafe { &mut *(slice_from_raw_parts_mut(ptr, 1) as *mut Self) }
     }
 
@@ -219,9 +238,9 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_client(&mut self, name: impl AsRef<str>) -> Result<Client> {
+    pub fn create_client(&self, name: impl AsRef<str>) -> Result<Client> {
         let name = CString::new(name.as_ref())?;
-        let handle = unsafe { mpv_create_client(self.as_mut_ptr(), name.as_ptr()) };
+        let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name.as_ptr()) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
@@ -232,9 +251,9 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_weak_client(&mut self, name: impl AsRef<str>) -> Result<Client> {
+    pub fn create_weak_client(&self, name: impl AsRef<str>) -> Result<Client> {
         let name = CString::new(name.as_ref())?;
-        let handle = unsafe { mpv_create_weak_client(self.as_mut_ptr(), name.as_ptr()) };
+        let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name.as_ptr()) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
@@ -267,14 +286,14 @@ impl Handle {
     ///
     /// As long as the timeout is 0, this is safe to be called from mpv render API
     /// threads.
-    pub fn wait_event(&mut self, timeout: f64) -> Event {
+    pub fn wait_event(&mut self, timeout: f64) -> Event<'_> {
         unsafe { Event::from_ptr(mpv_wait_event(self.as_mut_ptr(), timeout)) }
     }
 
     /// Return the name of this client handle. Every client has its own unique
     /// name, which is mostly used for user interface purposes.
     #[must_use]
-    pub fn name<'a>(&self) -> &'a str {
+    pub fn name(&self) -> &str {
         unsafe {
             CStr::from_ptr(mpv_client_name(self.as_ptr().cast_mut()))
                 .to_str()
@@ -549,20 +568,20 @@ impl Deref for Client {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        Handle::from_ptr(self.0)
+        unsafe { Handle::from_ptr(self.0) }
     }
 }
 
 impl DerefMut for Client {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        Handle::from_ptr(self.0)
+        unsafe { Handle::from_ptr_mut(self.0) }
     }
 }
 
 unsafe impl Send for Client {}
 
-impl Event {
+impl Event<'_> {
     unsafe fn from_ptr(event: *const mpv_event) -> Self {
         unsafe {
             match (*event).event_id {
@@ -598,7 +617,7 @@ impl Event {
     }
 }
 
-impl fmt::Display for Event {
+impl fmt::Display for Event<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let event = match *self {
             Self::Shutdown => mpv_event_id_MPV_EVENT_SHUTDOWN,
@@ -628,17 +647,17 @@ impl fmt::Display for Event {
     }
 }
 
-impl Property {
+impl<'h> Property<'h> {
     /// Wrap a raw `mpv_event_property`
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
-        Self(ptr.cast::<mpv_event_property>())
+        Self(ptr.cast::<mpv_event_property>(), PhantomData)
     }
 
     /// Name of the property.
     #[must_use]
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &'h str {
         unsafe { CStr::from_ptr((*self.0).name) }.to_str().unwrap_or("unknown")
     }
 
@@ -654,33 +673,33 @@ impl Property {
     }
 }
 
-impl fmt::Display for Property {
+impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.name())
     }
 }
 
-impl LogMessage {
+impl LogMessage<'_> {
     /// Wrap a raw `mpv_event_log_message`
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
-        Self(ptr.cast::<mpv_event_log_message>())
+        Self(ptr.cast::<mpv_event_log_message>(), PhantomData)
     }
 }
 
-impl fmt::Display for LogMessage {
+impl fmt::Display for LogMessage<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("log message")
     }
 }
 
-impl StartFile {
+impl StartFile<'_> {
     /// Wrap a raw `mpv_event_start_file`
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
-        Self(ptr.cast::<mpv_event_start_file>())
+        Self(ptr.cast::<mpv_event_start_file>(), PhantomData)
     }
 
     /// Playlist entry ID of the file being loaded now.
@@ -690,39 +709,39 @@ impl StartFile {
     }
 }
 
-impl fmt::Display for StartFile {
+impl fmt::Display for StartFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("start file")
     }
 }
 
-impl EndFile {
+impl EndFile<'_> {
     /// Wrap a raw `mpv_event_end_file`
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
-        Self(ptr.cast::<mpv_event_end_file>())
+        Self(ptr.cast::<mpv_event_end_file>(), PhantomData)
     }
 }
 
-impl fmt::Display for EndFile {
+impl fmt::Display for EndFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("end file")
     }
 }
 
-impl ClientMessage {
+impl<'h> ClientMessage<'h> {
     /// Wrap a raw `mpv_event_client_message`.
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
-        Self(ptr.cast::<mpv_event_client_message>())
+        Self(ptr.cast::<mpv_event_client_message>(), PhantomData)
     }
 
     #[must_use]
     /// # Panics
     /// Panics if `num_args` is negative, or if event args contain invalid UTF-8.
-    pub fn args<'a>(&self) -> Vec<&'a str> {
+    pub fn args(&self) -> Vec<&'h str> {
         unsafe {
             let args = std::slice::from_raw_parts(
                 (*self.0).args,
@@ -739,23 +758,23 @@ impl ClientMessage {
     }
 }
 
-impl fmt::Display for ClientMessage {
+impl fmt::Display for ClientMessage<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("client-message")
     }
 }
 
-impl Hook {
+impl<'h> Hook<'h> {
     /// Wrap a raw `mpv_event_hook`.
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
-        Self(ptr.cast::<mpv_event_hook>())
+        Self(ptr.cast::<mpv_event_hook>(), PhantomData)
     }
 
     /// The hook name as passed to `Handle::hook_add`.
     #[must_use]
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &'h str {
         unsafe { CStr::from_ptr((*self.0).name).to_str().unwrap_or("unknown") }
     }
 
@@ -766,7 +785,7 @@ impl Hook {
     }
 }
 
-impl fmt::Display for Hook {
+impl fmt::Display for Hook<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.name())
     }

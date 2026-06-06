@@ -12,7 +12,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #[unsafe(no_mangle)]
         pub extern "C" fn mpv_open_cplugin(handle: *mut mpv_handle) -> i32 {
-            let mp = Handle::from_ptr(handle);
+            let mp = unsafe { Handle::from_ptr_mut(handle) };
             mp.init_logger().expect("logger is already set");
             #fn_name(mp)
         }

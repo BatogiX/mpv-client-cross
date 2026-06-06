@@ -110,7 +110,6 @@ impl Format for Node {
 
         let node = unsafe { &mut *(ptr as *mut mpv_node) };
         let result = from_mpv_node_value(node);
-        unsafe { mpv_free_node_contents(node) };
         Ok(result)
     }
 

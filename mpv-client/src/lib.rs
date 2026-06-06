@@ -347,6 +347,7 @@ impl Handle {
             .into_iter()
             .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
             .collect();
+
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
 
@@ -354,7 +355,9 @@ impl Handle {
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
 
         result!(ret)?;
-        unsafe { Ok(from_mpv_node_value(res.assume_init_mut())) }
+        let result = unsafe { from_mpv_node_value(res.assume_init_mut()) };
+        unsafe { mpv_free_node_contents(res.as_mut_ptr()) };
+        Ok(result)
     }
 
     /// Same as `Handle::command`, but run the command asynchronously.

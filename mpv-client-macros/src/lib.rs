@@ -11,10 +11,10 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #input_fn
 
         #[unsafe(no_mangle)]
-        pub extern "C" fn mpv_open_cplugin(handle: *mut mpv_handle) -> i32 {
-            let mp = unsafe { Handle::from_ptr_mut(handle) };
+        unsafe extern "C" fn mpv_open_cplugin(handle: *mut ::mpv_client::mpv_handle) -> i32 {
+            let (mp, event_token) = unsafe { ::mpv_client::Handle::from_ptr(handle) };
             mp.init_logger().expect("logger is already set");
-            #fn_name(mp)
+            #fn_name(mp, event_token)
         }
     };
 

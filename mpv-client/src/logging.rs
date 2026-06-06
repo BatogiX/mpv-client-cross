@@ -87,7 +87,18 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
         let now = SystemTime::now();
         let last_line = read_last_line(&path_log_file).expect("has log file");
 
-        let last_time = Duration::from_secs_f64(last_line[1..=8].trim_start().parse::<f64>().expect("valid timestamp"));
+        let last_time = if last_line.is_empty() {
+            Duration::from_secs(0)
+        } else {
+            Duration::from_secs_f64(
+                last_line
+                    .get(1..=8)
+                    .unwrap_or("")
+                    .trim_start()
+                    .parse::<f64>()
+                    .unwrap_or(0.0),
+            )
+        };
 
         let suffix = format!("-{module}");
         match path_log_file.rfind('.') {

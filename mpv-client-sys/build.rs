@@ -11,6 +11,7 @@ fn main() {
     {
         let bindings = bindgen::Builder::default()
             .header("include/client.h")
+            .no_copy("mpv_handle")
             .clang_arg("-target")
             .clang_arg("x86_64-unknown-linux-gnu")
             .generate()

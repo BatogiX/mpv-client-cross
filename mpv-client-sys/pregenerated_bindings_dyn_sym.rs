@@ -40,7 +40,7 @@ pub type uintmax_t = ::std::os::raw::c_ulong;
 #[unsafe(no_mangle)]
 static mut pfn_mpv_client_api_version: Option<unsafe extern "C" fn() -> ::std::os::raw::c_ulong> = None;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct mpv_handle {
     _unused: [u8; 0],
 }

@@ -39,17 +39,19 @@ And then the code `src/lib.rs`:
 use mpv_client::{mpv_handle, Event, Handle};
 
 #[no_mangle]
-extern "C" fn mpv_open_cplugin(handle: *mut mpv_handle) -> std::os::raw::c_int {
-  let mp = unsafe { Handle::from_ptr_mut(handle) };
+unsafe extern "C" fn mpv_open_cplugin(handle: *mut mpv_handle) -> i32 {
+  let (mp, event_token) = unsafe { Handle::from_ptr(handle) };
   
   println!("Hello world from Rust plugin {}!", mp.name());
   
   loop {
-    match mp.wait_event(-1.) {
-      Event::Shutdown => { return 0; },
-      event => { println!("Got event: {}", event); },
+    match mp.wait_event(&mut event_token, -1.) {
+      Event::Shutdown => break,
+      event => println!("Got event: {}", event),
     }
   }
+
+  0
 }
 ```
 
@@ -60,18 +62,20 @@ mpv-client = { version = "2.0", package = "mpv-client-cross", features = ["macro
 ```
 
 ```rust
-use mpv_client::{Event, Handle};
+use mpv_client::{Event, Handle, EventQueueToken};
 
 #[mpv_client::main]
-fn main(mp: &mut Handle) -> i32 {
+fn main(mp: &Handle, mut event_token: EventQueueToken) -> i32 {
   log::info!("Hello world from Rust plugin {}!", mp.name());
   
   loop {
-    match mp.wait_event(-1.) {
-      Event::Shutdown => { return 0; },
-      event => { log::info!("Got event: {}", event); },
+    match mp.wait_event(&mut event_token, -1.) {
+      Event::Shutdown => break,
+      event => log::info!("Got event: {}", event),
     }
   }
+
+  0
 }
 ```
 
@@ -84,7 +88,7 @@ First, define your configuration structure using serde deserialization. It is hi
 
 ```rust
 use serde::Deserialize;
-use mpv_client::{Event, Handle};
+use mpv_client::{Event, Handle, EventQueueToken};
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
@@ -116,18 +120,20 @@ You can call read_options() directly on your Handle instance. The method automat
 
 ```rust
 #[mpv_client::main]
-fn main(mp: &mut Handle) -> i32 {
+fn main(mp: &Handle, mut event_token: EventQueueToken) -> i32 {
     // Automatically reads options and falls back to defaults if not found
     let config: PluginConfig = mp.read_options();
     
     println!("Plugin initialized with config: {:#?}", config);
     
     loop {
-        match mp.wait_event(-1.) {
-            Event::Shutdown => return 0,
-            _ => {}
+        match mp.wait_event(&mut event_token, -1.) {
+            Event::Shutdown => break,
+            event => log::info!("Got event: {}", event),
         }
     }
+
+    0
 }
 ```
 

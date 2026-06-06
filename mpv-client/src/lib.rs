@@ -17,9 +17,8 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::path::PathBuf;
-use std::ptr::slice_from_raw_parts_mut;
 use std::{fmt, fs};
 
 pub use mpv_client_sys::mpv_handle;
@@ -52,6 +51,16 @@ pub use mpv_client_macros::main;
 #[repr(transparent)]
 pub struct Handle {
     inner: [mpv_handle],
+}
+
+pub struct EventQueueToken {
+    _private: (),
+}
+
+impl EventQueueToken {
+    const fn new() -> Self {
+        Self { _private: () }
+    }
 }
 
 /// A type representing an owned client context.
@@ -197,24 +206,11 @@ impl Handle {
     ///   duration of lifetime `'a`.
     #[inline]
     #[must_use]
-    pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> &'a Self {
-        unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) }
-    }
-
-    /// Wrap a raw `mpv_handle`
-    ///
-    /// This function will wrap the provided `ptr` with a `Handle` wrapper, which
-    /// allows inspection and interoperation of non-owned `mpv_handle`.
-    ///
-    /// # Safety
-    ///
-    /// * `ptr` must be non null.
-    ///
-    /// * The memory referenced by the returned `Handle` must not be freed for
-    ///   the duration of lifetime `'a`.
-    #[inline]
-    pub unsafe fn from_ptr_mut<'a>(ptr: *mut mpv_handle) -> &'a mut Self {
-        unsafe { &mut *(slice_from_raw_parts_mut(ptr, 1) as *mut Self) }
+    pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
+        (
+            unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
+            EventQueueToken::new(),
+        )
     }
 
     /// # Safety
@@ -238,34 +234,27 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_client(&self, name: impl AsRef<str>) -> Result<Client> {
+    pub fn create_client(&self, name: impl AsRef<str>) -> Result<(Client, EventQueueToken)> {
         let name = CString::new(name.as_ref())?;
         let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name.as_ptr()) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok(Client(handle))
+            Ok((Client(handle), EventQueueToken::new()))
         }
     }
 
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_weak_client(&self, name: impl AsRef<str>) -> Result<Client> {
+    pub fn create_weak_client(&self, name: impl AsRef<str>) -> Result<(Client, EventQueueToken)> {
         let name = CString::new(name.as_ref())?;
         let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name.as_ptr()) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok(Client(handle))
+            Ok((Client(handle), EventQueueToken::new()))
         }
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error if the mpv API call fails.
-    pub fn initialize(&mut self) -> Result<()> {
-        unsafe { result!(mpv_initialize(self.as_mut_ptr())) }
     }
 
     /// Wait for the next event, or until the timeout expires, or if another thread
@@ -286,8 +275,8 @@ impl Handle {
     ///
     /// As long as the timeout is 0, this is safe to be called from mpv render API
     /// threads.
-    pub fn wait_event(&mut self, timeout: f64) -> Event<'_> {
-        unsafe { Event::from_ptr(mpv_wait_event(self.as_mut_ptr(), timeout)) }
+    pub fn wait_event<'h>(&'h self, _token: &'h mut EventQueueToken, timeout: f64) -> Event<'h> {
+        unsafe { Event::from_ptr(mpv_wait_event(self.as_ptr().cast_mut(), timeout)) }
     }
 
     /// Return the name of this client handle. Every client has its own unique
@@ -541,19 +530,13 @@ impl Client {
     ///
     /// # Errors
     /// Returns an error if mpv instance creation fails (out of memory).
-    pub fn new() -> Result<Self> {
+    pub fn create() -> Result<(UninitializedClient, EventQueueToken)> {
         let handle = unsafe { mpv_create() };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok(Self(handle))
+            Ok((UninitializedClient(handle), EventQueueToken::new()))
         }
-    }
-
-    /// # Errors
-    /// Returns an mpv error if initialization fails.
-    pub fn initialize(self) -> Result<Self> {
-        unsafe { result!(mpv_initialize(self.0)).map(|()| self) }
     }
 }
 
@@ -568,18 +551,33 @@ impl Deref for Client {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { Handle::from_ptr(self.0) }
-    }
-}
-
-impl DerefMut for Client {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { Handle::from_ptr_mut(self.0) }
+        unsafe { Handle::from_ptr(self.0).0 }
     }
 }
 
 unsafe impl Send for Client {}
+
+pub struct UninitializedClient(*mut mpv_handle);
+
+impl Drop for UninitializedClient {
+    fn drop(&mut self) {
+        unsafe { mpv_destroy(self.0) }
+    }
+}
+
+impl UninitializedClient {
+    /// Initialize the mpv core. Consumes the uninitialized client and returns
+    /// a ready-to-use `Client`.
+    ///
+    /// # Errors
+    /// Returns an mpv error if initialization fails.
+    pub fn initialize(self) -> Result<Client> {
+        let handle = self.0;
+        std::mem::forget(self);
+
+        unsafe { result!(mpv_initialize(handle)).map(|()| Client(handle)) }
+    }
+}
 
 impl Event<'_> {
     unsafe fn from_ptr(event: *const mpv_event) -> Self {

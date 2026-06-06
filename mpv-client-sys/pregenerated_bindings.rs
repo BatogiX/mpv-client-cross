@@ -214,7 +214,7 @@ unsafe extern "C" {
     pub fn mpv_client_api_version() -> ::std::os::raw::c_ulong;
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct mpv_handle {
     _unused: [u8; 0],
 }
@@ -272,7 +272,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn mpv_load_config_file(ctx: *mut mpv_handle, filename: *const ::std::os::raw::c_char)
-        -> ::std::os::raw::c_int;
+    -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn mpv_get_time_ns(ctx: *mut mpv_handle) -> i64;

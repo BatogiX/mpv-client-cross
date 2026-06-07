@@ -236,3 +236,24 @@ unsafe fn drop_mpv_node_contents(node: &mut mpv_node) {
         }
     }
 }
+
+pub struct MpvNodeGuard(*mut mpv_node);
+
+impl From<&Node> for MpvNodeGuard {
+    fn from(node: &Node) -> Self {
+        Self(<*mut mpv_node>::from(node))
+    }
+}
+
+impl MpvNodeGuard {
+    #[must_use]
+    pub const fn as_ptr(&self) -> *mut mpv_node {
+        self.0
+    }
+}
+
+impl Drop for MpvNodeGuard {
+    fn drop(&mut self) {
+        unsafe { drop_mpv_node(self.0) };
+    }
+}

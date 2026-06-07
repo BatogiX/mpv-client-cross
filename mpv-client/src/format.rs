@@ -1,4 +1,4 @@
-use crate::node::drop_mpv_node;
+use crate::node::MpvNodeGuard;
 
 use super::Result;
 use super::{mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_node, mpv_node__bindgen_ty_1};
@@ -116,10 +116,8 @@ impl Format for Node {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mpv_node_ptr = <*mut mpv_node>::from(&self);
-        let res = fun(mpv_node_ptr.cast::<c_void>());
-        unsafe { drop_mpv_node(mpv_node_ptr) };
-        res
+        let guard = MpvNodeGuard::from(&self);
+        fun(guard.as_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {

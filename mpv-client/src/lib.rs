@@ -199,6 +199,7 @@ impl Handle {
     #[inline]
     #[must_use]
     pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
+        assert!(!ptr.is_null(), "mpv_handle pointer must not be null");
         (
             unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
             EventQueueToken(ptr),
@@ -360,8 +361,9 @@ impl Handle {
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
         let mut res = MaybeUninit::<mpv_node>::zeroed();
-        let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
-        let _guard = MpvNodeContentsGuard(res.as_mut_ptr());
+        let res_ptr = res.as_mut_ptr();
+        let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res_ptr) };
+        let _guard = MpvNodeContentsGuard(res_ptr);
         result!(ret)?;
         let result = unsafe { Node::from(res.assume_init_ref()) };
         Ok(result)
@@ -597,6 +599,10 @@ impl UninitializedClient {
 
 impl Event<'_> {
     unsafe fn from_ptr(event: *const mpv_event) -> Self {
+        if event.is_null() {
+            return Self::None;
+        }
+
         unsafe {
             match (*event).event_id {
                 mpv_event_id_MPV_EVENT_SHUTDOWN => Self::Shutdown,

@@ -149,9 +149,15 @@ impl From<&Node> for *mut mpv_node {
                     .map(|n| unsafe { *Box::from_raw(<*mut mpv_node>::from(n)) })
                     .collect();
 
+                let values_ptr = if values.is_empty() {
+                    ptr::null_mut()
+                } else {
+                    Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>()
+                };
+
                 let list = Box::new(mpv_node_list {
-                    num: values.len().try_into().expect("len fits in i32"),
-                    values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
+                    num: arr.len().try_into().expect("len fits in i32"),
+                    values: values_ptr,
                     keys: std::ptr::null_mut(),
                 });
 
@@ -169,10 +175,22 @@ impl From<&Node> for *mut mpv_node {
                     })
                     .unzip();
 
+                let values_ptr = if values.is_empty() {
+                    ptr::null_mut()
+                } else {
+                    Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>()
+                };
+
+                let keys_ptr = if keys.is_empty() {
+                    ptr::null_mut()
+                } else {
+                    Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>()
+                };
+
                 let list = Box::new(mpv_node_list {
-                    num: values.len().try_into().expect("len fits in i32"),
-                    values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
-                    keys: Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>(),
+                    num: map.len().try_into().expect("len fits in i32"),
+                    values: values_ptr,
+                    keys: keys_ptr,
                 });
 
                 mpv_node.u.list = Box::into_raw(list);

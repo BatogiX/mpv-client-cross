@@ -30,7 +30,13 @@ impl Format for String {
     /// Returns an error if the C string is not valid UTF-8.
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         let ptr = ptr.cast::<*const c_char>();
-        Ok(unsafe { CStr::from_ptr(*ptr) }.to_str()?.to_owned())
+        let string_ptr = unsafe { *ptr };
+
+        if string_ptr.is_null() {
+            return Ok(Self::new());
+        }
+
+        Ok(unsafe { CStr::from_ptr(string_ptr) }.to_str()?.to_owned())
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -45,6 +51,11 @@ impl Format for String {
         let mut ptr: *mut c_char = std::ptr::null_mut();
         fun((&raw mut ptr).cast::<c_void>())?;
         let _guard = MpvFreeGuard(ptr);
+
+        if ptr.is_null() {
+            return Ok(Self::new());
+        }
+
         let result = unsafe { CStr::from_ptr(ptr) }.to_str().map(ToOwned::to_owned);
         Ok(result?)
     }

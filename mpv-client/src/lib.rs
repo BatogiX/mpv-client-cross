@@ -363,7 +363,7 @@ impl Handle {
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
         result!(ret)?;
         let _guard = MpvNodeContentsGuard(res.as_mut_ptr());
-        let result = unsafe { Node::from(res.assume_init_mut()) };
+        let result = unsafe { Node::from(res.assume_init_ref()) };
         Ok(result)
     }
 
@@ -585,14 +585,12 @@ impl UninitializedClient {
     /// Returns an mpv error if initialization fails.
     pub fn initialize(self) -> Result<Client> {
         let handle = self.0;
-        unsafe {
-            match result!(mpv_initialize(handle)) {
-                Ok(()) => {
-                    std::mem::forget(self);
-                    Ok(Client(handle))
-                }
-                Err(e) => Err(e),
+        match result!(unsafe { mpv_initialize(handle) }) {
+            Ok(()) => {
+                std::mem::forget(self);
+                Ok(Client(handle))
             }
+            Err(e) => Err(e),
         }
     }
 }

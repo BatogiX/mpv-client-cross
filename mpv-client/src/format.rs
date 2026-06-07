@@ -110,7 +110,7 @@ impl Format for Node {
             return Ok(Self::None);
         }
 
-        let node = unsafe { &mut *(ptr as *mut mpv_node) };
+        let node = unsafe { &*ptr.cast::<mpv_node>() };
         let result = Self::from(node);
         Ok(result)
     }
@@ -128,7 +128,7 @@ impl Format for Node {
 
         fun((&raw mut node).cast::<c_void>())?;
         let _guard = MpvNodeContentsGuard(&raw mut node);
-        let result = Self::from(&mut node);
+        let result = Self::from(&node);
         Ok(result)
     }
 }

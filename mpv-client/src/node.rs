@@ -23,10 +23,10 @@ pub enum Node {
     Map(HashMap<String, Self>),
 }
 
-impl From<&mut mpv_node> for Node {
+impl From<&mpv_node> for Node {
     /// # Panics
     /// If the mpv node contains a negative count (invalid for the C API).
-    fn from(node: &mut mpv_node) -> Self {
+    fn from(node: &mpv_node) -> Self {
         match node.format {
             mpv_format_MPV_FORMAT_STRING => {
                 Self::String(unsafe { CStr::from_ptr(node.u.string) }.to_string_lossy().into_owned())
@@ -40,7 +40,7 @@ impl From<&mut mpv_node> for Node {
                 let values =
                     unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
 
-                Self::Array(values.iter_mut().map(Self::from).collect())
+                Self::Array(values.iter().map(Self::from).collect())
             }
             mpv_format_MPV_FORMAT_NODE_MAP => {
                 let list = unsafe { &*node.u.list };
@@ -52,7 +52,7 @@ impl From<&mut mpv_node> for Node {
 
                 let map = keys
                     .iter()
-                    .zip(values.iter_mut())
+                    .zip(values.iter())
                     .filter_map(|(&k, v)| {
                         unsafe { k.as_ref() }.map(|key_ptr| {
                             let key = unsafe { CStr::from_ptr(key_ptr) }.to_string_lossy().into_owned();

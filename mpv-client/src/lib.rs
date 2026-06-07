@@ -466,9 +466,9 @@ impl Handle {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
 
-    #[must_use]
     /// # Panics
     /// Panics if `expand-path` or `script-opts` commands fail or return unexpected types.
+    #[must_use]
     pub fn read_options<T>(&self) -> T
     where
         T: DeserializeOwned + Default,

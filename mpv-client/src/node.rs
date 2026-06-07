@@ -34,15 +34,20 @@ impl From<&mut mpv_node> for Node {
             mpv_format_MPV_FORMAT_FLAG => Self::Bool(unsafe { node.u.flag } != 0),
             mpv_format_MPV_FORMAT_NODE_ARRAY => {
                 let list = unsafe { &*node.u.list };
+
                 let values =
                     unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
+
                 Self::Array(values.iter_mut().map(Self::from).collect())
             }
             mpv_format_MPV_FORMAT_NODE_MAP => {
                 let list = unsafe { &*node.u.list };
+
                 let values =
                     unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
+
                 let keys = unsafe { slice::from_raw_parts(list.keys, list.num.try_into().expect("num fits in usize")) };
+
                 let map = keys
                     .iter()
                     .zip(values.iter_mut())
@@ -53,6 +58,7 @@ impl From<&mut mpv_node> for Node {
                         })
                     })
                     .collect();
+
                 Self::Map(map)
             }
             mpv_format_MPV_FORMAT_BYTE_ARRAY => {
@@ -97,41 +103,54 @@ impl From<&Node> for *mut mpv_node {
             }
             Node::Array(arr) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
-                let values: Vec<_> = arr.iter().map(Self::from).collect();
+
+                let values: Vec<mpv_node> = arr
+                    .iter()
+                    .map(|n| unsafe { *Box::from_raw(<*mut mpv_node>::from(n)) })
+                    .collect();
+
                 let list = Box::new(mpv_node_list {
                     num: values.len().try_into().expect("len fits in i32"),
                     values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
                     keys: std::ptr::null_mut(),
                 });
+
                 mpv_node.u.list = Box::into_raw(list);
             }
             Node::Map(map) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_MAP;
-                let (keys, values): (Vec<_>, Vec<_>) = map
+
+                let (values, keys): (Vec<mpv_node>, Vec<*mut c_char>) = map
                     .iter()
                     .map(|(k, v)| {
-                        let ckey = CString::new(k.as_str()).expect("CString::new failed");
-                        (ckey.into_raw(), Self::from(v))
+                        let ckey = CString::new(k.as_str()).expect("CString::new failed").into_raw();
+                        let node = unsafe { *Box::from_raw(Self::from(v)) };
+                        (node, ckey)
                     })
                     .unzip();
 
                 let list = Box::new(mpv_node_list {
-                    num: keys.len().try_into().expect("len fits in i32"),
-                    keys: Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>(),
+                    num: values.len().try_into().expect("len fits in i32"),
                     values: Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>(),
+                    keys: Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>(),
                 });
+
                 mpv_node.u.list = Box::into_raw(list);
             }
             Node::ByteArray(vec) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_BYTE_ARRAY;
+
                 let ba = Box::new(mpv_byte_array {
                     size: vec.len(),
                     data: unsafe { libc::malloc(vec.len()) },
                 });
+
                 assert!(!ba.data.is_null(), "Failed to allocate memory for byte array");
+
                 unsafe {
                     ptr::copy_nonoverlapping(vec.as_ptr(), ba.data.cast::<u8>(), vec.len());
                 }
+
                 mpv_node.u.ba = Box::into_raw(ba);
             }
         }

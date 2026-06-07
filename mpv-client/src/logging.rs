@@ -50,6 +50,7 @@ impl Log for MpvLogger {
                 .elapsed()
                 .expect("start_time is valid")
                 .as_secs_f64();
+
             let log_message = format!("[{elapsed:>8.3}][{level_str}]{log_message}");
 
             if let Ok(mut file) = log_file.file.lock() {
@@ -67,6 +68,7 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
     let path_log_file = mp
         .get_property::<String>("log-file")
         .expect("log-file property must exist");
+
     let path_log_file = if path_log_file.starts_with('~') {
         let node = mp
             .command_ret(["expand-path", &path_log_file])

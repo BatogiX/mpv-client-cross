@@ -33,8 +33,8 @@ impl Format for String {
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
         let cstr = CString::new(self)?;
-        let ptr = &cstr.as_ptr() as *const *const c_char;
-        fun(ptr as *mut c_void)
+        let mut ptr = cstr.as_ptr();
+        fun((&raw mut ptr).cast::<c_void>())
     }
 
     /// # Errors

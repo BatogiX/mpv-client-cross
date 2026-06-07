@@ -584,7 +584,6 @@ impl UninitializedClient {
     pub fn initialize(self) -> Result<Client> {
         let handle = self.0;
         std::mem::forget(self);
-
         unsafe { result!(mpv_initialize(handle)).map(|()| Client(handle)) }
     }
 }

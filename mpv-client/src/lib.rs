@@ -361,8 +361,8 @@ impl Handle {
         raw_args.push(std::ptr::null()); // Adding null at the end
         let mut res = MaybeUninit::<mpv_node>::zeroed();
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
-        result!(ret)?;
         let _guard = MpvNodeContentsGuard(res.as_mut_ptr());
+        result!(ret)?;
         let result = unsafe { Node::from(res.assume_init_ref()) };
         Ok(result)
     }

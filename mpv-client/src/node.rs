@@ -234,7 +234,6 @@ impl From<&Node> for *mut mpv_node {
 }
 
 pub struct MpvNodeGuard(*mut mpv_node);
-
 impl From<&Node> for MpvNodeGuard {
     fn from(node: &Node) -> Self {
         Self(<*mut mpv_node>::from(node))

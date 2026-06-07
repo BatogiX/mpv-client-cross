@@ -69,8 +69,8 @@ impl Format for bool {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let data = c_int::from(self);
-        fun(&raw const data as *mut c_void)
+        let mut data = c_int::from(self);
+        fun((&raw mut data).cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
@@ -87,7 +87,8 @@ impl Format for i64 {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        fun(&raw const self as *mut c_void)
+        let mut data = self;
+        fun((&raw mut data).cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
@@ -104,7 +105,8 @@ impl Format for f64 {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        fun(&raw const self as *mut c_void)
+        let mut data = self;
+        fun((&raw mut data).cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
@@ -137,8 +139,8 @@ impl Format for Node {
             u: mpv_node__bindgen_ty_1 { int64: 0 },
         };
 
-        fun((&raw mut node).cast::<c_void>())?;
         let _guard = MpvNodeContentsGuard(&raw mut node);
+        fun((&raw mut node).cast::<c_void>())?;
         let result = Self::from(&node);
         Ok(result)
     }

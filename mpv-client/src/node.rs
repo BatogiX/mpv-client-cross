@@ -27,48 +27,86 @@ impl From<&mpv_node> for Node {
     /// # Panics
     /// If the mpv node contains a negative count (invalid for the C API).
     fn from(node: &mpv_node) -> Self {
-        match node.format {
-            mpv_format_MPV_FORMAT_STRING => {
-                Self::String(unsafe { CStr::from_ptr(node.u.string) }.to_string_lossy().into_owned())
-            }
-            mpv_format_MPV_FORMAT_INT64 => Self::Int(unsafe { node.u.int64 }),
-            mpv_format_MPV_FORMAT_DOUBLE => Self::Double(unsafe { node.u.double_ }),
-            mpv_format_MPV_FORMAT_FLAG => Self::Bool(unsafe { node.u.flag } != 0),
-            mpv_format_MPV_FORMAT_NODE_ARRAY => {
-                let list = unsafe { &*node.u.list };
+        unsafe {
+            match node.format {
+                mpv_format_MPV_FORMAT_STRING => {
+                    if node.u.string.is_null() {
+                        Self::None
+                    } else {
+                        Self::String(CStr::from_ptr(node.u.string).to_string_lossy().into_owned())
+                    }
+                }
+                mpv_format_MPV_FORMAT_INT64 => Self::Int(node.u.int64),
+                mpv_format_MPV_FORMAT_DOUBLE => Self::Double(node.u.double_),
+                mpv_format_MPV_FORMAT_FLAG => Self::Bool(node.u.flag != 0),
+                mpv_format_MPV_FORMAT_NODE_ARRAY => {
+                    if node.u.list.is_null() {
+                        return Self::Array(Vec::new());
+                    }
 
-                let values =
-                    unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
+                    let list = &*node.u.list;
+                    let len: usize = list.num.try_into().expect("num fits in usize");
 
-                Self::Array(values.iter().map(Self::from).collect())
-            }
-            mpv_format_MPV_FORMAT_NODE_MAP => {
-                let list = unsafe { &*node.u.list };
+                    let values = if len == 0 || list.values.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(list.values, len)
+                    };
 
-                let values =
-                    unsafe { slice::from_raw_parts_mut(list.values, list.num.try_into().expect("num fits in usize")) };
+                    Self::Array(values.iter().map(Self::from).collect())
+                }
+                mpv_format_MPV_FORMAT_NODE_MAP => {
+                    if node.u.list.is_null() {
+                        return Self::Map(HashMap::new());
+                    }
 
-                let keys = unsafe { slice::from_raw_parts(list.keys, list.num.try_into().expect("num fits in usize")) };
+                    let list = &*node.u.list;
+                    let len: usize = list.num.try_into().expect("num fits in usize");
 
-                let map = keys
-                    .iter()
-                    .zip(values.iter())
-                    .filter_map(|(&k, v)| {
-                        unsafe { k.as_ref() }.map(|key_ptr| {
-                            let key = unsafe { CStr::from_ptr(key_ptr) }.to_string_lossy().into_owned();
-                            (key, Self::from(v))
+                    let values = if len == 0 || list.values.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(list.values, len)
+                    };
+
+                    let keys = if len == 0 || list.keys.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(list.keys, len)
+                    };
+
+                    let map = keys
+                        .iter()
+                        .zip(values.iter())
+                        .filter_map(|(&k, v)| {
+                            if k.is_null() {
+                                None
+                            } else {
+                                let key = CStr::from_ptr(k).to_string_lossy().into_owned();
+                                (key, Self::from(v)).into()
+                            }
                         })
-                    })
-                    .collect();
+                        .collect();
 
-                Self::Map(map)
+                    Self::Map(map)
+                }
+                mpv_format_MPV_FORMAT_BYTE_ARRAY => {
+                    if node.u.ba.is_null() {
+                        return Self::ByteArray(Vec::new());
+                    }
+
+                    let arr: &mpv_byte_array = &*node.u.ba;
+
+                    let data = if arr.size == 0 || arr.data.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(arr.data as *const u8, arr.size)
+                    };
+
+                    Self::ByteArray(data.to_vec())
+                }
+                _ => Self::None,
             }
-            mpv_format_MPV_FORMAT_BYTE_ARRAY => {
-                let arr: &mpv_byte_array = unsafe { &*node.u.ba };
-                let data = unsafe { slice::from_raw_parts(arr.data as *const u8, arr.size) };
-                Self::ByteArray(data.to_vec())
-            }
-            _ => Self::None,
         }
     }
 }

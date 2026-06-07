@@ -40,6 +40,7 @@ use mpv_client_sys::{
     mpv_unobserve_property, mpv_wait_event,
 };
 
+use crate::node::MpvNodeContentsGuard;
 use crate::options::CoercingString;
 
 #[cfg(feature = "macros")]
@@ -361,8 +362,8 @@ impl Handle {
         let mut res = MaybeUninit::<mpv_node>::zeroed();
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
         result!(ret)?;
+        let _guard = MpvNodeContentsGuard(res.as_mut_ptr());
         let result = unsafe { Node::from(res.assume_init_mut()) };
-        unsafe { mpv_free_node_contents(res.as_mut_ptr()) };
         Ok(result)
     }
 

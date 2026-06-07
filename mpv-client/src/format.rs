@@ -44,8 +44,8 @@ impl Format for String {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut ptr: *mut c_char = std::ptr::null_mut();
         fun((&raw mut ptr).cast::<c_void>())?;
+        let _guard = MpvFreeGuard(ptr);
         let result = unsafe { CStr::from_ptr(ptr) }.to_str().map(ToOwned::to_owned);
-        unsafe { mpv_free(ptr.cast::<c_void>()) };
         Ok(result?)
     }
 }
@@ -127,8 +127,22 @@ impl Format for Node {
         };
 
         fun((&raw mut node).cast::<c_void>())?;
+        let _guard = MpvNodeContentsGuard(&raw mut node);
         let result = Self::from(&mut node);
-        unsafe { mpv_free_node_contents(&raw mut node) };
         Ok(result)
+    }
+}
+
+struct MpvFreeGuard(*mut c_char);
+impl Drop for MpvFreeGuard {
+    fn drop(&mut self) {
+        unsafe { mpv_free(self.0.cast::<c_void>()) };
+    }
+}
+
+struct MpvNodeContentsGuard(*mut mpv_node);
+impl Drop for MpvNodeContentsGuard {
+    fn drop(&mut self) {
+        unsafe { mpv_free_node_contents(self.0) };
     }
 }

@@ -1,3 +1,5 @@
+use mpv_client_sys::mpv_free_node_contents;
+
 use super::{
     mpv_byte_array, mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
     mpv_format_MPV_FORMAT_INT64, mpv_format_MPV_FORMAT_NODE_ARRAY, mpv_format_MPV_FORMAT_NODE_MAP,
@@ -255,5 +257,12 @@ impl MpvNodeGuard {
 impl Drop for MpvNodeGuard {
     fn drop(&mut self) {
         unsafe { drop_mpv_node(self.0) };
+    }
+}
+
+pub struct MpvNodeContentsGuard(pub *mut mpv_node);
+impl Drop for MpvNodeContentsGuard {
+    fn drop(&mut self) {
+        unsafe { mpv_free_node_contents(self.0) };
     }
 }

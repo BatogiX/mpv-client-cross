@@ -332,6 +332,7 @@ impl Handle {
             .into_iter()
             .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
             .collect();
+
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
         unsafe { result!(mpv_command(self.as_ptr().cast_mut(), raw_args.as_mut_ptr())) }
@@ -357,10 +358,8 @@ impl Handle {
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
-
         let mut res = MaybeUninit::<mpv_node>::zeroed();
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res.as_mut_ptr()) };
-
         result!(ret)?;
         let result = unsafe { Node::from(res.assume_init_mut()) };
         unsafe { mpv_free_node_contents(res.as_mut_ptr()) };
@@ -395,8 +394,10 @@ impl Handle {
             .into_iter()
             .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
             .collect();
+
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
         raw_args.push(std::ptr::null()); // Adding null at the end
+
         unsafe {
             result!(mpv_command_async(
                 self.as_ptr().cast_mut(),
@@ -524,7 +525,6 @@ impl Handle {
             raw_map.into_iter().map(|(k, v)| (k, CoercingString(v))).collect();
 
         let map_deserializer = de::value::MapDeserializer::new(deserializer_map.into_iter());
-
         T::deserialize(map_deserializer).unwrap_or_default()
     }
 
@@ -542,6 +542,7 @@ impl Client {
     /// Returns an error if mpv instance creation fails (out of memory).
     pub fn create() -> Result<(UninitializedClient, EventQueueToken)> {
         let handle = unsafe { mpv_create() };
+
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
@@ -754,6 +755,7 @@ impl<'h> ClientMessage<'h> {
                 (*self.0).args,
                 (*self.0).num_args.try_into().expect("negative num_args"),
             );
+
             args.iter()
                 .map(|arg| {
                     CStr::from_ptr(*arg)

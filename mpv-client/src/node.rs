@@ -162,83 +162,6 @@ impl From<&Node> for *mut mpv_node {
     }
 }
 
-pub unsafe fn drop_mpv_node(ptr: *mut mpv_node) {
-    unsafe {
-        if ptr.is_null() {
-            return;
-        }
-
-        drop_mpv_node_contents(&mut *ptr);
-        drop(Box::from_raw(ptr));
-    }
-}
-
-unsafe fn drop_mpv_node_contents(node: &mut mpv_node) {
-    unsafe {
-        match node.format {
-            mpv_format_MPV_FORMAT_STRING => {
-                if !node.u.string.is_null() {
-                    drop(CString::from_raw(node.u.string));
-                }
-            }
-            mpv_format_MPV_FORMAT_NODE_ARRAY => {
-                if node.u.list.is_null() {
-                    return;
-                }
-
-                let list = Box::from_raw(node.u.list);
-                let len = usize::try_from(list.num).unwrap_or(0);
-
-                if !list.values.is_null() {
-                    for child in slice::from_raw_parts_mut(list.values, len) {
-                        drop_mpv_node_contents(child);
-                    }
-
-                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
-                }
-            }
-            mpv_format_MPV_FORMAT_NODE_MAP => {
-                if node.u.list.is_null() {
-                    return;
-                }
-
-                let list = Box::from_raw(node.u.list);
-                let len = usize::try_from(list.num).unwrap_or(0);
-
-                if !list.values.is_null() {
-                    for child in slice::from_raw_parts_mut(list.values, len) {
-                        drop_mpv_node_contents(child);
-                    }
-
-                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
-                }
-
-                if !list.keys.is_null() {
-                    for &key in slice::from_raw_parts(list.keys, len) {
-                        if !key.is_null() {
-                            drop(CString::from_raw(key));
-                        }
-                    }
-
-                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)));
-                }
-            }
-            mpv_format_MPV_FORMAT_BYTE_ARRAY => {
-                if node.u.ba.is_null() {
-                    return;
-                }
-
-                let ba = Box::from_raw(node.u.ba);
-
-                if !ba.data.is_null() {
-                    libc::free(ba.data);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 pub struct MpvNodeGuard(*mut mpv_node);
 
 impl From<&Node> for MpvNodeGuard {
@@ -256,7 +179,79 @@ impl MpvNodeGuard {
 
 impl Drop for MpvNodeGuard {
     fn drop(&mut self) {
-        unsafe { drop_mpv_node(self.0) };
+        fn drop_mpv_node_contents(node: &mut mpv_node) {
+            unsafe {
+                match node.format {
+                    mpv_format_MPV_FORMAT_STRING => {
+                        if !node.u.string.is_null() {
+                            drop(CString::from_raw(node.u.string));
+                        }
+                    }
+                    mpv_format_MPV_FORMAT_NODE_ARRAY => {
+                        if node.u.list.is_null() {
+                            return;
+                        }
+
+                        let list = Box::from_raw(node.u.list);
+                        let len = usize::try_from(list.num).unwrap_or(0);
+
+                        if !list.values.is_null() {
+                            for child in slice::from_raw_parts_mut(list.values, len) {
+                                drop_mpv_node_contents(child);
+                            }
+
+                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
+                        }
+                    }
+                    mpv_format_MPV_FORMAT_NODE_MAP => {
+                        if node.u.list.is_null() {
+                            return;
+                        }
+
+                        let list = Box::from_raw(node.u.list);
+                        let len = usize::try_from(list.num).unwrap_or(0);
+
+                        if !list.values.is_null() {
+                            for child in slice::from_raw_parts_mut(list.values, len) {
+                                drop_mpv_node_contents(child);
+                            }
+
+                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
+                        }
+
+                        if !list.keys.is_null() {
+                            for &key in slice::from_raw_parts(list.keys, len) {
+                                if !key.is_null() {
+                                    drop(CString::from_raw(key));
+                                }
+                            }
+
+                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)));
+                        }
+                    }
+                    mpv_format_MPV_FORMAT_BYTE_ARRAY => {
+                        if node.u.ba.is_null() {
+                            return;
+                        }
+
+                        let ba = Box::from_raw(node.u.ba);
+
+                        if !ba.data.is_null() {
+                            libc::free(ba.data);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let ptr = self.0;
+        if ptr.is_null() {
+            return;
+        }
+
+        unsafe { drop_mpv_node_contents(&mut *ptr) };
+        unsafe { drop(Box::from_raw(ptr)) }
     }
 }
 

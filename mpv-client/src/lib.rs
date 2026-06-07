@@ -757,10 +757,13 @@ impl<'h> ClientMessage<'h> {
     /// Panics if `num_args` is negative, or if event args contain invalid UTF-8.
     pub fn args(&self) -> Vec<&'h str> {
         unsafe {
-            let args = std::slice::from_raw_parts(
-                (*self.0).args,
-                (*self.0).num_args.try_into().expect("negative num_args"),
-            );
+            let num_args: usize = (*self.0).num_args.try_into().expect("negative num_args");
+
+            let args = if num_args == 0 || (*self.0).args.is_null() {
+                &[]
+            } else {
+                std::slice::from_raw_parts((*self.0).args, num_args)
+            };
 
             args.iter()
                 .map(|arg| {

@@ -144,10 +144,18 @@ impl From<&Node> for *mut mpv_node {
             Node::Array(arr) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
 
-                let values: Vec<mpv_node> = arr
-                    .iter()
-                    .map(|n| unsafe { *Box::from_raw(<*mut mpv_node>::from(n)) })
-                    .collect();
+                let mut guard = MapBuilderGuard {
+                    values: Vec::with_capacity(arr.len()),
+                    keys: Vec::with_capacity(0),
+                };
+
+                for v in arr {
+                    let node = unsafe { *Box::from_raw(Self::from(v)) };
+                    guard.values.push(node);
+                }
+
+                let values = std::mem::take(&mut guard.values);
+                std::mem::forget(guard);
 
                 let values_ptr = if values.is_empty() {
                     ptr::null_mut()
@@ -166,14 +174,21 @@ impl From<&Node> for *mut mpv_node {
             Node::Map(map) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_MAP;
 
-                let (values, keys): (Vec<mpv_node>, Vec<*mut c_char>) = map
-                    .iter()
-                    .map(|(k, v)| {
-                        let ckey = CString::new(k.as_str()).expect("CString::new failed").into_raw();
-                        let node = unsafe { *Box::from_raw(Self::from(v)) };
-                        (node, ckey)
-                    })
-                    .unzip();
+                let mut guard = MapBuilderGuard {
+                    values: Vec::with_capacity(map.len()),
+                    keys: Vec::with_capacity(map.len()),
+                };
+
+                for (k, v) in map {
+                    let cstring = CString::new(k.as_str()).expect("CString::new failed");
+                    let node = unsafe { *Box::from_raw(Self::from(v)) };
+                    guard.keys.push(cstring.into_raw());
+                    guard.values.push(node);
+                }
+
+                let values = std::mem::take(&mut guard.values);
+                let keys = std::mem::take(&mut guard.keys);
+                std::mem::forget(guard);
 
                 let values_ptr = if values.is_empty() {
                     ptr::null_mut()
@@ -235,72 +250,6 @@ impl MpvNodeGuard {
 
 impl Drop for MpvNodeGuard {
     fn drop(&mut self) {
-        fn drop_mpv_node_contents(node: &mut mpv_node) {
-            unsafe {
-                match node.format {
-                    mpv_format_MPV_FORMAT_STRING => {
-                        if !node.u.string.is_null() {
-                            drop(CString::from_raw(node.u.string));
-                        }
-                    }
-                    mpv_format_MPV_FORMAT_NODE_ARRAY => {
-                        if node.u.list.is_null() {
-                            return;
-                        }
-
-                        let list = Box::from_raw(node.u.list);
-                        let len = usize::try_from(list.num).unwrap_or(0);
-
-                        if !list.values.is_null() {
-                            for child in slice::from_raw_parts_mut(list.values, len) {
-                                drop_mpv_node_contents(child);
-                            }
-
-                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
-                        }
-                    }
-                    mpv_format_MPV_FORMAT_NODE_MAP => {
-                        if node.u.list.is_null() {
-                            return;
-                        }
-
-                        let list = Box::from_raw(node.u.list);
-                        let len = usize::try_from(list.num).unwrap_or(0);
-
-                        if !list.values.is_null() {
-                            for child in slice::from_raw_parts_mut(list.values, len) {
-                                drop_mpv_node_contents(child);
-                            }
-
-                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
-                        }
-
-                        if !list.keys.is_null() {
-                            for &key in slice::from_raw_parts(list.keys, len) {
-                                if !key.is_null() {
-                                    drop(CString::from_raw(key));
-                                }
-                            }
-
-                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)));
-                        }
-                    }
-                    mpv_format_MPV_FORMAT_BYTE_ARRAY => {
-                        if node.u.ba.is_null() {
-                            return;
-                        }
-
-                        let ba = Box::from_raw(node.u.ba);
-
-                        if !ba.data.is_null() {
-                            libc::free(ba.data);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         let ptr = self.0;
         if ptr.is_null() {
             return;
@@ -315,5 +264,90 @@ pub struct MpvNodeContentsGuard(pub *mut mpv_node);
 impl Drop for MpvNodeContentsGuard {
     fn drop(&mut self) {
         unsafe { mpv_free_node_contents(self.0) };
+    }
+}
+
+struct MapBuilderGuard {
+    values: Vec<mpv_node>,
+    keys: Vec<*mut c_char>,
+}
+
+impl Drop for MapBuilderGuard {
+    fn drop(&mut self) {
+        for child in &mut self.values {
+            drop_mpv_node_contents(child);
+        }
+
+        for &key in &self.keys {
+            if !key.is_null() {
+                unsafe { drop(CString::from_raw(key)) };
+            }
+        }
+    }
+}
+
+fn drop_mpv_node_contents(node: &mut mpv_node) {
+    unsafe {
+        match node.format {
+            mpv_format_MPV_FORMAT_STRING => {
+                if !node.u.string.is_null() {
+                    drop(CString::from_raw(node.u.string));
+                }
+            }
+            mpv_format_MPV_FORMAT_NODE_ARRAY => {
+                if node.u.list.is_null() {
+                    return;
+                }
+
+                let list = Box::from_raw(node.u.list);
+                let len = usize::try_from(list.num).unwrap_or(0);
+
+                if !list.values.is_null() {
+                    for child in slice::from_raw_parts_mut(list.values, len) {
+                        drop_mpv_node_contents(child);
+                    }
+
+                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
+                }
+            }
+            mpv_format_MPV_FORMAT_NODE_MAP => {
+                if node.u.list.is_null() {
+                    return;
+                }
+
+                let list = Box::from_raw(node.u.list);
+                let len = usize::try_from(list.num).unwrap_or(0);
+
+                if !list.values.is_null() {
+                    for child in slice::from_raw_parts_mut(list.values, len) {
+                        drop_mpv_node_contents(child);
+                    }
+
+                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
+                }
+
+                if !list.keys.is_null() {
+                    for &key in slice::from_raw_parts(list.keys, len) {
+                        if !key.is_null() {
+                            drop(CString::from_raw(key));
+                        }
+                    }
+
+                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)));
+                }
+            }
+            mpv_format_MPV_FORMAT_BYTE_ARRAY => {
+                if node.u.ba.is_null() {
+                    return;
+                }
+
+                let ba = Box::from_raw(node.u.ba);
+
+                if !ba.data.is_null() {
+                    libc::free(ba.data);
+                }
+            }
+            _ => {}
+        }
     }
 }

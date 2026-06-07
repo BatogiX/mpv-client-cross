@@ -585,8 +585,15 @@ impl UninitializedClient {
     /// Returns an mpv error if initialization fails.
     pub fn initialize(self) -> Result<Client> {
         let handle = self.0;
-        std::mem::forget(self);
-        unsafe { result!(mpv_initialize(handle)).map(|()| Client(handle)) }
+        unsafe {
+            match result!(mpv_initialize(handle)) {
+                Ok(()) => {
+                    std::mem::forget(self);
+                    Ok(Client(handle))
+                }
+                Err(e) => Err(e),
+            }
+        }
     }
 }
 

@@ -196,6 +196,10 @@ impl Handle {
     ///
     /// * No mutable references to the same `mpv_handle` may exist for the
     ///   duration of lifetime `'a`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided `ptr` is null.
     #[inline]
     #[must_use]
     pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
@@ -210,11 +214,6 @@ impl Handle {
     #[must_use]
     pub const fn as_ptr(&self) -> *const mpv_handle {
         self.inner.as_ptr()
-    }
-
-    #[inline]
-    pub const fn as_mut_ptr(&mut self) -> *mut mpv_handle {
-        self.inner.as_mut_ptr()
     }
 
     /// # Errors
@@ -542,7 +541,6 @@ impl Handle {
 // threads concurrently. The single exception is `mpv_wait_event`, which is strictly
 // protected at compile-time by requiring a unique `&mut EventQueueToken`.
 unsafe impl Sync for Handle {}
-unsafe impl Send for Handle {}
 
 impl Client {
     /// Create a new standalone mpv client.

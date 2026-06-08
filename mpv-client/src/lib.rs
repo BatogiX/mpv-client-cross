@@ -538,6 +538,12 @@ impl Handle {
     }
 }
 
+// SAFETY: libmpv guarantees that the same mpv_handle is safe to be called from multiple
+// threads concurrently. The single exception is `mpv_wait_event`, which is strictly
+// protected at compile-time by requiring a unique `&mut EventQueueToken`.
+unsafe impl Sync for Handle {}
+unsafe impl Send for Handle {}
+
 impl Client {
     /// Create a new standalone mpv client.
     ///
@@ -569,6 +575,10 @@ impl Deref for Client {
     }
 }
 
+// SAFETY: `Client` uniquely owns the underlying `mpv_handle` and its destruction
+// via `mpv_destroy` is entirely thread-safe. Since `Handle` is `Send` and `Sync`,
+// it is also perfectly safe to transfer or share ownership of `Client` across threads.
+unsafe impl Sync for Client {}
 unsafe impl Send for Client {}
 
 pub struct UninitializedClient(*mut mpv_handle);

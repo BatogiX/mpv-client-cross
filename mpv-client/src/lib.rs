@@ -541,7 +541,7 @@ impl Handle {
 
     /// # Errors
     /// Returns `log::SetLoggerError` if a logger is already set.
-    pub fn init_logger(&self) -> std::result::Result<(), log::SetLoggerError> {
+    pub fn initialize_logging(&self) -> std::result::Result<(), log::SetLoggerError> {
         logging::init(self)
     }
 }

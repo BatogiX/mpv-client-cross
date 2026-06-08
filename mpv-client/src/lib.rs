@@ -71,7 +71,7 @@ pub enum Event<'h> {
     LogMessage(LogMessage<'h>),
     /// Reply to a `Handle::get_property_async` request.
     /// See also `Property`.
-    GetPropertyReply(Result<()>, u64, Property<'h>),
+    GetPropertyReply(Result<()>, u64, Option<Property<'h>>),
     /// Reply to a `Handle::set_property_async` request.
     /// (Unlike `GetPropertyReply`, `Property` is not used.)
     SetPropertyReply(Result<()>, u64),
@@ -625,11 +625,15 @@ impl Event<'_> {
             match (*event).event_id {
                 mpv_event_id_MPV_EVENT_SHUTDOWN => Self::Shutdown,
                 mpv_event_id_MPV_EVENT_LOG_MESSAGE => Self::LogMessage(LogMessage::from_ptr((*event).data)),
-                mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY => Self::GetPropertyReply(
-                    result!((*event).error),
-                    (*event).reply_userdata,
-                    Property::from_ptr((*event).data),
-                ),
+                mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY => {
+                    let err = result!((*event).error);
+                    let prop = if (*event).data.is_null() {
+                        None
+                    } else {
+                        Some(Property::from_ptr((*event).data))
+                    };
+                    Self::GetPropertyReply(err, (*event).reply_userdata, prop)
+                }
                 mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY => {
                     Self::SetPropertyReply(result!((*event).error), (*event).reply_userdata)
                 }

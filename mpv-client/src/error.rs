@@ -1,10 +1,9 @@
-use crate::mpv_error_MPV_ERROR_GENERIC;
-
-use super::{mpv_error, mpv_error_string};
-
-use std::ffi::{CStr, NulError};
-use std::fmt;
-use std::str::Utf8Error;
+use mpv_client_sys::{mpv_error, mpv_error_MPV_ERROR_GENERIC, mpv_error_string};
+use std::{
+    ffi::{CStr, NulError},
+    fmt,
+    str::Utf8Error,
+};
 
 #[derive(Debug)]
 pub struct Error(mpv_error);

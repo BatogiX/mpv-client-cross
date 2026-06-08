@@ -1,14 +1,14 @@
-use mpv_client_sys::mpv_free_node_contents;
-
-use super::{
+use mpv_client_sys::{
     mpv_byte_array, mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
     mpv_format_MPV_FORMAT_INT64, mpv_format_MPV_FORMAT_NODE_ARRAY, mpv_format_MPV_FORMAT_NODE_MAP,
-    mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_STRING, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list,
+    mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_STRING, mpv_free_node_contents, mpv_node, mpv_node__bindgen_ty_1,
+    mpv_node_list,
 };
-use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char, c_void};
-use std::ptr;
-use std::slice;
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString, c_char, c_void},
+    ptr, slice,
+};
 
 #[derive(Debug, Clone, Default)]
 pub enum Node {

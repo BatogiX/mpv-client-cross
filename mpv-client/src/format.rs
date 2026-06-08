@@ -1,11 +1,9 @@
-use crate::node::MpvNodeGuard;
-
-use super::Result;
-use super::{mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_node, mpv_node__bindgen_ty_1};
-
+use crate::{
+    Result,
+    node::{MpvNodeGuard, Node},
+};
+use mpv_client_sys::{mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_node, mpv_node__bindgen_ty_1};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
-
-use super::node::Node;
 
 pub trait Format: Sized + Default {
     const MPV_FORMAT: u32;

@@ -10,38 +10,34 @@ mod options;
 
 pub use error::{Error, Result};
 pub use format::Format;
-pub use node::Node;
-use serde::de::{self, DeserializeOwned};
-
-use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char, c_void};
-use std::marker::PhantomData;
-use std::mem::MaybeUninit;
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::{fmt, fs};
-
 pub use mpv_client_sys::mpv_handle;
-use mpv_client_sys::{
-    mpv_byte_array, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret, mpv_create,
-    mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error, mpv_error_MPV_ERROR_GENERIC,
-    mpv_error_MPV_ERROR_NOMEM, mpv_error_MPV_ERROR_SUCCESS, mpv_error_string, mpv_event, mpv_event_client_message,
-    mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
-    mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED,
-    mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE,
-    mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
-    mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
-    mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
-    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_format_MPV_FORMAT_BYTE_ARRAY,
-    mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG, mpv_format_MPV_FORMAT_INT64,
-    mpv_format_MPV_FORMAT_NODE_ARRAY, mpv_format_MPV_FORMAT_NODE_MAP, mpv_format_MPV_FORMAT_NONE,
-    mpv_format_MPV_FORMAT_STRING, mpv_free, mpv_free_node_contents, mpv_get_property, mpv_hook_add, mpv_hook_continue,
-    mpv_initialize, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list, mpv_observe_property, mpv_set_property,
-    mpv_unobserve_property, mpv_wait_event,
-};
+pub use node::Node;
 
-use crate::node::MpvNodeContentsGuard;
-use crate::options::CoercingString;
+use crate::{node::MpvNodeContentsGuard, options::CoercingString};
+
+use mpv_client_sys::{
+    mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret, mpv_create, mpv_create_client,
+    mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM, mpv_error_MPV_ERROR_SUCCESS, mpv_event,
+    mpv_event_client_message, mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
+    mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE,
+    mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK,
+    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
+    mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
+    mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
+    mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
+    mpv_event_start_file, mpv_get_property, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_node,
+    mpv_observe_property, mpv_set_property, mpv_unobserve_property, mpv_wait_event,
+};
+use serde::de::{self, DeserializeOwned};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString, c_char, c_void},
+    fmt, fs,
+    marker::PhantomData,
+    mem::MaybeUninit,
+    ops::Deref,
+    path::PathBuf,
+};
 
 #[cfg(feature = "macros")]
 pub use mpv_client_macros::main;
@@ -558,7 +554,7 @@ impl Handle {
     }
 }
 
-/// SAFETY: libmpv guarantees that the same mpv_handle is safe to be called from multiple
+/// SAFETY: libmpv guarantees that the same `mpv_handle` is safe to be called from multiple
 /// threads concurrently. The single exception is [`mpv_wait_event`], which is strictly
 /// protected at compile-time by requiring a unique &mut [`EventQueueToken`].
 unsafe impl Sync for Handle {}

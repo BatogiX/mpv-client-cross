@@ -1,11 +1,12 @@
-use log::{Level, Log, Metadata, Record, SetLoggerError};
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write as _};
-use std::path::Path;
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
-
 use crate::{Handle, Node};
+use log::{Level, Log, Metadata, Record, SetLoggerError};
+use std::{
+    fs::File,
+    io::{self, Read, Seek, SeekFrom, Write as _},
+    path::Path,
+    sync::Mutex,
+    time::{Duration, SystemTime},
+};
 
 pub struct MpvLogger {
     module: String,

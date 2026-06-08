@@ -53,7 +53,7 @@ pub struct Handle {
     inner: [mpv_handle],
 }
 
-pub struct EventQueueToken(*const mpv_handle);
+pub struct EventQueueToken(i64);
 
 // SAFETY: The token represents exclusive access to the event queue.
 // It is safe to send to another thread, but cannot be shared concurrently (!Sync).
@@ -212,11 +212,12 @@ impl Handle {
     /// Panics if the provided `ptr` is null.
     #[inline]
     #[must_use]
-    pub const unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
+    pub unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
         assert!(!ptr.is_null(), "mpv_handle pointer must not be null");
+        let id = unsafe { mpv_client_id(ptr.cast_mut()) };
         (
             unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
-            EventQueueToken(ptr),
+            EventQueueToken(id),
         )
     }
 
@@ -235,7 +236,8 @@ impl Handle {
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok((Client(handle), EventQueueToken(handle)))
+            let id = unsafe { mpv_client_id(handle) };
+            Ok((Client(handle), EventQueueToken(id)))
         }
     }
 
@@ -248,7 +250,8 @@ impl Handle {
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok((Client(handle), EventQueueToken(handle)))
+            let id = unsafe { mpv_client_id(handle) };
+            Ok((Client(handle), EventQueueToken(id)))
         }
     }
 
@@ -289,7 +292,7 @@ impl Handle {
     /// to this specific `Handle` instance.
     pub fn wait_event<'h>(&'h self, token: &'h mut EventQueueToken, timeout: f64) -> Event<'h> {
         assert_eq!(
-            self.as_ptr(),
+            self.id(),
             token.0,
             "mismatched EventQueueToken: this token does not belong to this MPV handle!"
         );
@@ -563,7 +566,8 @@ impl Client {
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
-            Ok((UninitializedClient(handle), EventQueueToken(handle)))
+            let id = unsafe { mpv_client_id(handle) };
+            Ok((UninitializedClient(handle), EventQueueToken(id)))
         }
     }
 }

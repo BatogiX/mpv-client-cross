@@ -55,6 +55,10 @@ pub struct Handle {
 
 pub struct EventQueueToken(*const mpv_handle);
 
+// SAFETY: The token represents exclusive access to the event queue.
+// It is safe to send to another thread, but cannot be shared concurrently (!Sync).
+unsafe impl Send for EventQueueToken {}
+
 /// A type representing an owned client context.
 pub struct Client(*mut mpv_handle);
 
@@ -185,17 +189,23 @@ macro_rules! osd_async {
 }
 
 impl Handle {
-    /// Wrap a raw `mpv_handle` as a shared reference.
+    /// Safely bind an `mpv_handle` pointer to a shared reference and mint its
+    /// associated exclusive `EventQueueToken`.
     ///
     /// # Safety
     ///
-    /// * `ptr` must be non-null.
+    /// * `ptr` must point to a valid, fully initialized `mpv_handle` allocated by `libmpv`.
     ///
-    /// * The memory referenced by the returned `Handle` must not be freed for
+    /// * The underlying memory referenced by the returned `Handle` must remain valid and
+    ///   unfreed for the entire duration of lifetime `'a`.
+    ///
+    /// * No aliasing mutable references to the same `mpv_handle` may exist anywhere for
     ///   the duration of lifetime `'a`.
     ///
-    /// * No mutable references to the same `mpv_handle` may exist for the
-    ///   duration of lifetime `'a`.
+    /// * The caller must guarantee that this is the **only** active `EventQueueToken`
+    ///   associated with this specific `mpv_handle`. Minting duplicate tokens breaks the
+    ///   compile-time single-threaded safety model enforced by [`Handle::wait_event`],
+    ///   introducing runtime data races inside the C library.
     ///
     /// # Panics
     ///
@@ -569,7 +579,7 @@ impl Deref for Client {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { Handle::from_ptr(self.0).0 }
+        unsafe { &*(std::ptr::slice_from_raw_parts(self.0, 1) as *const Handle) }
     }
 }
 

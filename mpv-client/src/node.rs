@@ -6,7 +6,7 @@ use super::{
     mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_STRING, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list,
 };
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr;
 use std::slice;
 
@@ -216,10 +216,8 @@ impl From<&Node> for *mut mpv_node {
                 let data = if vec.is_empty() {
                     std::ptr::null_mut()
                 } else {
-                    let ptr = unsafe { libc::malloc(vec.len()) };
-                    assert!(!ptr.is_null(), "Failed to allocate memory for byte array");
-                    unsafe { ptr::copy_nonoverlapping(vec.as_ptr(), ptr.cast::<u8>(), vec.len()) };
-                    ptr
+                    let boxed_slice = vec.clone().into_boxed_slice();
+                    Box::into_raw(boxed_slice).cast::<c_void>()
                 };
 
                 let ba = Box::new(mpv_byte_array { data, size: vec.len() });
@@ -339,9 +337,9 @@ fn drop_mpv_node_contents(node: &mut mpv_node) {
                 }
 
                 let ba = Box::from_raw(node.u.ba);
-
                 if !ba.data.is_null() {
-                    libc::free(ba.data);
+                    let slice_ptr = ptr::slice_from_raw_parts_mut(ba.data.cast::<u8>(), ba.size);
+                    drop(Box::from_raw(slice_ptr));
                 }
             }
             _ => {}

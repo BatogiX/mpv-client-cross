@@ -19,7 +19,6 @@ macros = ["mpv-client-macros"]
 [dependencies]
 mpv-client-sys.workspace = true
 mpv-client-macros = { workspace = true, optional = true }
-libc.workspace = true
 serde.workspace = true
 log.workspace = true
 

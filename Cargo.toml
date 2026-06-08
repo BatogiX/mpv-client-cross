@@ -13,7 +13,6 @@ version = "2.0.1"
 [workspace.dependencies]
 mpv-client-sys = { package = "mpv-client-cross-sys", version = "2", path = "mpv-client-sys" }
 mpv-client-macros = { package = "mpv-client-cross-macros", version = "2", path = "mpv-client-macros" }
-libc = "0.2"
 serde = "1"
 syn = { version = "2", features = ["full"] }
 quote = "1"

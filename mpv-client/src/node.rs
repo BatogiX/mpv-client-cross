@@ -113,7 +113,7 @@ impl From<&mpv_node> for Node {
 
 impl From<&Node> for *mut mpv_node {
     /// # Panics
-    /// If a node string contains a null byte or a length overflows `i32`.
+    /// If a node string contains a null byte or a length overflows [`i32`].
     fn from(node: &Node) -> Self {
         let mut mpv_node = Box::new(mpv_node {
             format: 0,

@@ -67,7 +67,7 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
     let module = mp.name().to_owned();
 
     let path_log_file = mp
-        .get_property::<String>("log-file")
+        .get_property::<&str, String>("log-file")
         .expect("log-file property must exist");
 
     let path_log_file = if path_log_file.starts_with('~') {

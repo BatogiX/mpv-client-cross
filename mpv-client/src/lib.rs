@@ -30,13 +30,15 @@ use mpv_client_sys::{
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
+    borrow::Cow,
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_void},
-    fmt, fs,
+    fmt, fs, iter,
     marker::PhantomData,
     mem::MaybeUninit,
     ops::Deref,
     path::PathBuf,
+    ptr,
 };
 
 #[cfg(feature = "macros")]
@@ -208,7 +210,7 @@ impl Handle {
         assert!(!ptr.is_null(), "mpv_handle pointer must not be null");
         let id = unsafe { mpv_client_id(ptr.cast_mut()) };
         (
-            unsafe { &*(std::ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
+            unsafe { &*(ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
             EventQueueToken(id),
         )
     }
@@ -222,8 +224,8 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_client(&self, name: impl AsRef<str>) -> Result<(Client, EventQueueToken)> {
-        let name = CString::new(name.as_ref())?;
+    pub fn create_client<'a, S: Into<Cow<'a, str>>>(&self, name: S) -> Result<(Client, EventQueueToken)> {
+        let name = CString::new(name.into().into_owned())?;
         let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name.as_ptr()) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
@@ -236,8 +238,8 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_weak_client(&self, name: impl AsRef<str>) -> Result<(Client, EventQueueToken)> {
-        let name = CString::new(name.as_ref())?;
+    pub fn create_weak_client<'a, S: Into<Cow<'a, str>>>(&self, name: S) -> Result<(Client, EventQueueToken)> {
+        let name = CString::new(name.into().into_owned())?;
         let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name.as_ptr()) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
@@ -329,18 +331,17 @@ impl Handle {
     ///
     /// # Panics
     /// Panics if any argument contains a null byte.
-    pub fn command<I, S>(&self, args: I) -> Result<()>
+    pub fn command<'a, I, S>(&self, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        S: Into<Cow<'a, str>>,
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
+            .map(|s| CString::new(s.into().into_owned()).expect("input contains null byte"))
             .collect();
 
-        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
-        raw_args.push(std::ptr::null()); // Adding null at the end
+        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         unsafe { result!(mpv_command(self.as_ptr().cast_mut(), raw_args.as_mut_ptr())) }
     }
 
@@ -352,18 +353,17 @@ impl Handle {
     ///
     /// # Panics
     /// Panics if any argument contains a null byte.
-    pub fn command_ret<I, S>(&self, args: I) -> Result<Node>
+    pub fn command_ret<'a, I, S>(&self, args: I) -> Result<Node>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        S: Into<Cow<'a, str>>,
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
+            .map(|s| CString::new(s.into().into_owned()).expect("input contains null byte"))
             .collect();
 
-        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
-        raw_args.push(std::ptr::null()); // Adding null at the end
+        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         let mut res = MaybeUninit::<mpv_node>::zeroed();
         let res_ptr = res.as_mut_ptr();
         let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res_ptr) };
@@ -392,19 +392,17 @@ impl Handle {
     ///
     /// # Panics
     /// Panics if any argument contains a null byte.
-    pub fn command_async<I, S>(&self, reply: u64, args: I) -> Result<()>
+    pub fn command_async<'a, I, S>(&self, reply: u64, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        S: Into<Cow<'a, str>>,
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.as_ref()).expect("input contains null byte"))
+            .map(|s| CString::new(s.into().into_owned()).expect("input contains null byte"))
             .collect();
 
-        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
-        raw_args.push(std::ptr::null()); // Adding null at the end
-
+        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         unsafe {
             result!(mpv_command_async(
                 self.as_ptr().cast_mut(),
@@ -416,8 +414,8 @@ impl Handle {
 
     /// # Errors
     /// Returns an mpv error if the property cannot be set.
-    pub fn set_property<T: Format>(&self, name: impl AsRef<str>, data: T) -> Result<()> {
-        let name = CString::new(name.as_ref())?;
+    pub fn set_property<'a, S: Into<Cow<'a, str>>, T: Format>(&self, name: S, data: T) -> Result<()> {
+        let name = CString::new(name.into().into_owned())?;
         let handle = self.as_ptr().cast_mut();
         data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
@@ -431,16 +429,16 @@ impl Handle {
     /// # Errors
     /// Returns an mpv error if the property cannot be read, or if the format
     /// doesn't match the internal format.
-    pub fn get_property<T: Format>(&self, name: impl AsRef<str>) -> Result<T> {
-        let name = CString::new(name.as_ref())?;
+    pub fn get_property<'a, S: Into<Cow<'a, str>>, T: Format>(&self, name: S) -> Result<T> {
+        let name = CString::new(name.into().into_owned())?;
         let handle = self.as_ptr().cast_mut();
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
 
     /// # Errors
     /// Returns an mpv error if property observation fails.
-    pub fn observe_property<T: Format>(&self, reply: u64, name: impl AsRef<str>) -> Result<()> {
-        let name = CString::new(name.as_ref())?;
+    pub fn observe_property<'a, S: Into<Cow<'a, str>>, T: Format>(&self, reply: u64, name: S) -> Result<()> {
+        let name = CString::new(name.into().into_owned())?;
         unsafe {
             result!(mpv_observe_property(
                 self.as_ptr().cast_mut(),
@@ -463,8 +461,8 @@ impl Handle {
 
     /// # Errors
     /// Returns an mpv error if the hook cannot be added.
-    pub fn hook_add(&self, reply: u64, name: &str, priority: i32) -> Result<()> {
-        let name = CString::new(name)?;
+    pub fn hook_add<'a, S: Into<Cow<'a, str>>>(&self, reply: u64, name: S, priority: i32) -> Result<()> {
+        let name = CString::new(name.into().into_owned())?;
         unsafe { result!(mpv_hook_add(self.as_ptr().cast_mut(), reply, name.as_ptr(), priority)) }
     }
 
@@ -474,15 +472,15 @@ impl Handle {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
 
-    pub fn request_log_messages(&self, min_level: &str) -> Result<()> {
+    pub fn request_log_messages<'a, S: Into<Cow<'a, str>>>(&self, min_level: S) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn get_property_async(&self, reply: u64, name: &str) -> Result<()> {
+    pub fn get_property_async<'a, S: Into<Cow<'a, str>>>(&self, reply: u64, name: S) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn set_property_async<T: Format>(&self, reply: u64, name: &str, data: T) -> Result<()> {
+    pub fn set_property_async<'a, S: Into<Cow<'a, str>>, T: Format>(&self, reply: u64, name: S, data: T) -> Result<()> {
         unimplemented!()
     }
 
@@ -523,7 +521,7 @@ impl Handle {
         }
 
         let Node::Map(script_opts) = self
-            .get_property::<Node>("script-opts")
+            .get_property::<&str, Node>("script-opts")
             .expect("'script-opts' property unavailable")
         else {
             unreachable!("'script-opts' always return a Map variant")
@@ -587,7 +585,7 @@ impl Deref for Client {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(std::ptr::slice_from_raw_parts(self.0, 1) as *const Handle) }
+        unsafe { &*(ptr::slice_from_raw_parts(self.0, 1) as *const Handle) }
     }
 }
 

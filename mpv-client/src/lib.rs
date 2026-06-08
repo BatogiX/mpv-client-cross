@@ -272,7 +272,7 @@ impl Handle {
     ///
     /// # Arguments
     ///
-    /// * `_token` - An exclusive capability token (`&mut EventQueueToken`) that enforces
+    /// * `token` - An exclusive capability token (`&mut EventQueueToken`) that enforces
     ///   the single-threaded event polling invariant at compile-time. Because it requires
     ///   a unique mutable reference, Rust's borrow checker guarantees that no two threads
     ///   can concurrently poll the event queue on the same handle, entirely preventing

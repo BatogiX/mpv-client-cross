@@ -11,7 +11,7 @@ Bindings for libmpv client API that allow you to create plugins for MPV in Rust.
 > * **No LLVM/Clang required:** Uses **pregenerated bindings** by default, meaning you don't need `bindgen` or a local LLVM installation during `cargo build`.
 > * **Ergonomic `#[mpv_client::main]` Macro:** Removes C-FFI boilerplate by wrapping your main function and automatically generating the underlying `mpv_open_cplugin` entry point.
 > * **Built-in Configuration Parsing:** Includes a seamless `read_options()` helper with `serde` support to automatically merge and parse options from both configuration files (`~~/script-opts/`) and MPV command-line arguments.
-> * **Logging:** The macro or ```mp.init_logger``` method automatically initializes a custom global `log` implementation (`MpvLogger`) that prints colored messages to stderr and seamlessly matches/synchronizes its timestamps with MPV's native `--log-file` timeline.
+> * **Logging:** The macro or ```mp.initialize_logging``` method automatically initializes a custom global `log` implementation (`MpvLogger`) that prints colored messages to stderr and seamlessly matches/synchronizes its timestamps with MPV's native `--log-file` timeline.
 
 ## Example
 

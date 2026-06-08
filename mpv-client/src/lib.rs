@@ -59,39 +59,39 @@ pub struct EventQueueToken(i64);
 pub struct Client(*mut mpv_handle);
 
 /// An enum representing the available events that can be received by
-/// `Handle::wait_event`.
+/// [`Handle::wait_event`].
 pub enum Event<'h> {
     /// Nothing happened. Happens on timeouts or sporadic wakeups.
     None,
     /// Happens when the player quits. The player enters a state where it tries
     /// to disconnect all clients.
     Shutdown,
-    /// See `Handle::request_log_messages`.
-    /// See also `LogMessage`.
+    /// See [`Handle::request_log_messages`].
+    /// See also [`LogMessage`].
     LogMessage(LogMessage<'h>),
-    /// Reply to a `Handle::get_property_async` request.
-    /// See also `Property`.
+    /// Reply to a [`Handle::get_property_async`] request.
+    /// See also [`Property`].
     GetPropertyReply(Result<()>, u64, Option<Property<'h>>),
-    /// Reply to a `Handle::set_property_async` request.
-    /// (Unlike `GetPropertyReply`, `Property` is not used.)
+    /// Reply to a [`Handle::set_property_async`] request.
+    /// (Unlike [`Event::GetPropertyReply`], [`Property`] is not used.)
     SetPropertyReply(Result<()>, u64),
-    /// Reply to a `Handle::command_async` or `mpv_command_node_async()` request.
-    /// See also `Command`.
+    /// Reply to a [`Handle::command_async`] or [`mpv_client_sys::mpv_command_node_async()`] request.
+    /// See also [`Command`].
     CommandReply(Result<()>, u64), // TODO mpv_event_command and mpv_node
     /// Notification before playback start of a file (before the file is loaded).
-    /// See also `StartFile`.
+    /// See also [`StartFile`].
     StartFile(StartFile<'h>),
     /// Notification after playback end (after the file was unloaded).
-    /// See also `EndFile`.
+    /// See also [`EndFile`].
     EndFile(EndFile<'h>),
     /// Notification when the file has been loaded (headers were read etc.), and
     /// decoding starts.
     FileLoaded,
     /// Triggered by the script-message input command. The command uses the
-    /// first argument of the command as client name (see `Handle::client_name`) to
+    /// first argument of the command as client name (see [`Handle::name`]) to
     /// dispatch the message, and passes along all arguments starting from the
     /// second argument as strings.
-    /// See also `ClientMessage`.
+    /// See also [`ClientMessage`].
     ClientMessage(ClientMessage<'h>),
     /// Happens after video changed in some way. This can happen on resolution
     /// changes, pixel format changes, or video filter changes. The event is
@@ -102,53 +102,53 @@ pub enum Event<'h> {
     /// yourself whether the video parameters really changed before doing
     /// something expensive.
     VideoReconfig,
-    /// Similar to `VideoReconfig`. This is relatively uninteresting,
+    /// Similar to [`Event::VideoReconfig`]. This is relatively uninteresting,
     /// because there is no such thing as audio output embedding.
     AudioReconfig,
     /// Happens when a seek was initiated. Playback stops. Usually it will
-    /// resume with `PlaybackRestart` as soon as the seek is finished.
+    /// resume with [`Event::PlaybackRestart`] as soon as the seek is finished.
     Seek,
     /// There was a discontinuity of some sort (like a seek), and playback
     /// was reinitialized. Usually happens on start of playback and after
     /// seeking. The main purpose is allowing the client to detect when a seek
     /// request is finished.
     PlaybackRestart,
-    /// Event sent due to `mpv_observe_property()`.
-    /// See also `Property`.
+    /// Event sent due to [`mpv_observe_property()`].
+    /// See also [`Property`].
     PropertyChange(u64, Property<'h>),
     /// Happens if the internal per-mpv_handle ringbuffer overflows, and at
     /// least 1 event had to be dropped. This can happen if the client doesn't
-    /// read the event queue quickly enough with `Handle::wait_event`, or if the
+    /// read the event queue quickly enough with [`Handle::wait_event`], or if the
     /// client makes a very large number of asynchronous calls at once.
     ///
     /// Event delivery will continue normally once this event was returned
     /// (this forces the client to empty the queue completely).
     QueueOverflow,
-    /// Triggered if a hook handler was registered with `Handle::hook_add`, and the
+    /// Triggered if a hook handler was registered with [`Handle::hook_add`], and the
     /// hook is invoked. If you receive this, you must handle it, and continue
-    /// the hook with `Handle::hook_continue`.
-    /// See also `Hook`.
+    /// the hook with [`Handle::hook_continue`].
+    /// See also [`Hook`].
     Hook(u64, Hook<'h>),
 }
 
-/// Data associated with `Event::GetPropertyReply` and `Event::PropertyChange`.
+/// Data associated with [`Event::GetPropertyReply`] and [`Event::PropertyChange`].
 pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
 
-/// Data associated with `Event::LogMessage`.
+/// Data associated with [`Event::LogMessage`].
 #[allow(dead_code)]
 pub struct LogMessage<'h>(*const mpv_event_log_message, PhantomData<&'h Handle>);
 
-/// Data associated with `Event::StartFile`.
+/// Data associated with [`Event::StartFile`].
 pub struct StartFile<'h>(*const mpv_event_start_file, PhantomData<&'h Handle>);
 
-/// Data associated with `Event::EndFile`.
+/// Data associated with [`Event::EndFile`].
 #[allow(dead_code)]
 pub struct EndFile<'h>(*const mpv_event_end_file, PhantomData<&'h Handle>);
 
-/// Data associated with `Event::ClientMessage`.
+/// Data associated with [`Event::ClientMessage`].
 pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Handle>);
 
-/// Data associated with `Event::Hook`.
+/// Data associated with [`Event::Hook`].
 pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
 
 macro_rules! result {
@@ -185,21 +185,21 @@ macro_rules! osd_async {
 }
 
 impl Handle {
-    /// Safely bind an `mpv_handle` pointer to a shared reference and mint its
-    /// associated exclusive `EventQueueToken`.
+    /// Safely bind an [`mpv_handle`] pointer to a shared reference and mint its
+    /// associated exclusive [`EventQueueToken`].
     ///
     /// # Safety
     ///
-    /// * `ptr` must point to a valid, fully initialized `mpv_handle` allocated by `libmpv`.
+    /// * `ptr` must point to a valid, fully initialized [`mpv_handle`] allocated by `libmpv`.
     ///
     /// * The underlying memory referenced by the returned `Handle` must remain valid and
     ///   unfreed for the entire duration of lifetime `'a`.
     ///
-    /// * No aliasing mutable references to the same `mpv_handle` may exist anywhere for
+    /// * No aliasing mutable references to the same [`mpv_handle`] may exist anywhere for
     ///   the duration of lifetime `'a`.
     ///
-    /// * The caller must guarantee that this is the **only** active `EventQueueToken`
-    ///   associated with this specific `mpv_handle`. Minting duplicate tokens breaks the
+    /// * The caller must guarantee that this is the **only** active [`EventQueueToken`]
+    ///   associated with this specific [`mpv_handle`]. Minting duplicate tokens breaks the
     ///   compile-time single-threaded safety model enforced by [`Handle::wait_event`],
     ///   introducing runtime data races inside the C library.
     ///
@@ -252,19 +252,19 @@ impl Handle {
     }
 
     /// Wait for the next event, or until the timeout expires, or if another thread
-    /// makes a call to `mpv_wakeup()`. Passing 0 as timeout will never wait, and
+    /// makes a call to [`mpv_client_sys::mpv_wakeup()`]. Passing 0 as timeout will never wait, and
     /// is suitable for polling.
     ///
     /// The internal event queue has a limited size (per client handle). If you
-    /// don't empty the event queue quickly enough with `Handle::wait_event`, it will
+    /// don't empty the event queue quickly enough with [`Handle::wait_event`], it will
     /// overflow and silently discard further events. If this happens, making
-    /// asynchronous requests will fail as well (with `MPV_ERROR_EVENT_QUEUE_FULL`).
+    /// asynchronous requests will fail as well (with [`mpv_client_sys::mpv_error_MPV_ERROR_EVENT_QUEUE_FULL`]).
     ///
-    /// Only one thread is allowed to call this on the same `Handle` at a time.
+    /// Only one thread is allowed to call this on the same [`Handle`] at a time.
     /// The API won't complain if more than one thread calls this, but it will cause
-    /// race conditions in the client when accessing the shared `mpv_event` struct.
+    /// race conditions in the client when accessing the shared [`mpv_event`] struct.
     /// Note that most other API functions are not restricted by this, and no API
-    /// function internally calls `mpv_wait_event()`. Additionally, concurrent calls
+    /// function internally calls [`mpv_wait_event()`]. Additionally, concurrent calls
     /// to different handles are always safe.
     ///
     /// As long as the timeout is 0, this is safe to be called from mpv render API
@@ -272,7 +272,7 @@ impl Handle {
     ///
     /// # Arguments
     ///
-    /// * `token` - An exclusive capability token (`&mut EventQueueToken`) that enforces
+    /// * `token` - An exclusive capability token (&mut [`EventQueueToken`]) that enforces
     ///   the single-threaded event polling invariant at compile-time. Because it requires
     ///   a unique mutable reference, Rust's borrow checker guarantees that no two threads
     ///   can concurrently poll the event queue on the same handle, entirely preventing
@@ -284,7 +284,7 @@ impl Handle {
     ///
     /// # Panics
     ///
-    /// Panics if the provided `EventQueueToken` is mismatched and does not belong
+    /// Panics if the provided [`EventQueueToken`] is mismatched and does not belong
     /// to this specific `Handle` instance.
     pub fn wait_event<'h>(&'h self, token: &'h mut EventQueueToken, timeout: f64) -> Event<'h> {
         assert_eq!(
@@ -308,13 +308,13 @@ impl Handle {
     }
 
     /// Return the ID of this client handle. Every client has its own unique ID. This
-    /// ID is never reused by the core, even if the `mpv_handle` at hand gets destroyed
+    /// ID is never reused by the core, even if the [`mpv_handle`] at hand gets destroyed
     /// and new handles get allocated.
     ///
     /// IDs are never 0 or negative.
     ///
     /// Some mpv APIs (not necessarily all) accept a name in the form "@<id>" in
-    /// addition of the proper `mpv_client_name()`, where "<id>" is the ID in decimal
+    /// addition of the proper [`mpv_client_name()`], where "<id>" is the ID in decimal
     /// form (e.g. "@123"). For example, the "script-message-to" command takes the
     /// client name as first argument, but also accepts the client ID formatted in
     /// this manner.
@@ -377,12 +377,12 @@ impl Handle {
         Ok(result)
     }
 
-    /// Same as `Handle::command`, but run the command asynchronously.
+    /// Same as [`Handle::command`], but run the command asynchronously.
     ///
     /// Commands are executed asynchronously. You will receive a
-    /// `CommandReply` event. This event will also have an
+    /// [`Event::CommandReply`] event. This event will also have an
     /// error code set if running the command failed. For commands that
-    /// return data, the data is put into `mpv_event_command.result`.
+    /// return data, the data is put into [`mpv_client_sys::mpv_event_command::result`].
     ///
     /// The only case when you do not receive an event is when the function call
     /// itself fails. This happens only if parsing the command itself (or otherwise
@@ -429,7 +429,7 @@ impl Handle {
     /// Read the value of the given property.
     ///
     /// If the format doesn't match with the internal format of the property, access
-    /// usually will fail with `MPV_ERROR_PROPERTY_FORMAT`. In some cases, the data
+    /// usually will fail with [`mpv_client_sys::mpv_error_MPV_ERROR_PROPERTY_FORMAT`]. In some cases, the data
     /// is automatically converted and access succeeds. For example, i64 is always
     /// converted to f64, and access using String usually invokes a string formatter.
     /// # Errors
@@ -455,8 +455,8 @@ impl Handle {
         }
     }
 
-    /// Undo `Handle::observe_property`. This will remove all observed properties for
-    /// which the given number was passed as reply to `Handle::observe_property`.
+    /// Undo [`Handle::observe_property`]. This will remove all observed properties for
+    /// which the given number was passed as reply to [`Handle::observe_property`].
     ///
     /// Safe to be called from mpv render API threads.
     /// # Errors
@@ -476,6 +476,18 @@ impl Handle {
     /// Returns an mpv error if hook continuation fails.
     pub fn hook_continue(&self, id: u64) -> Result<()> {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
+    }
+
+    pub fn request_log_messages(&self, min_level: &str) -> Result<()> {
+        unimplemented!()
+    }
+
+    pub fn get_property_async(&self, reply: u64, name: &str) -> Result<()> {
+        unimplemented!()
+    }
+
+    pub fn set_property_async<T: Format>(&self, reply: u64, name: &str, data: T) -> Result<()> {
+        unimplemented!()
     }
 
     /// # Panics
@@ -540,15 +552,15 @@ impl Handle {
     }
 
     /// # Errors
-    /// Returns `log::SetLoggerError` if a logger is already set.
+    /// Returns [`log::SetLoggerError`] if a logger is already set.
     pub fn initialize_logging(&self) -> std::result::Result<(), log::SetLoggerError> {
         logging::init(self)
     }
 }
 
-// SAFETY: libmpv guarantees that the same mpv_handle is safe to be called from multiple
-// threads concurrently. The single exception is `mpv_wait_event`, which is strictly
-// protected at compile-time by requiring a unique `&mut EventQueueToken`.
+/// SAFETY: libmpv guarantees that the same mpv_handle is safe to be called from multiple
+/// threads concurrently. The single exception is [`mpv_wait_event`], which is strictly
+/// protected at compile-time by requiring a unique &mut [`EventQueueToken`].
 unsafe impl Sync for Handle {}
 
 impl Client {
@@ -583,9 +595,9 @@ impl Deref for Client {
     }
 }
 
-// SAFETY: `Client` uniquely owns the underlying `mpv_handle` and its destruction
-// via `mpv_destroy` is entirely thread-safe. Since `Handle` is `Send` and `Sync`,
-// it is also perfectly safe to transfer or share ownership of `Client` across threads.
+/// SAFETY: [`Client`] uniquely owns the underlying [`mpv_handle`] and its destruction
+/// via [`mpv_destroy`] is entirely thread-safe. Since [`Handle`] is [`Send`] and [`Sync`],
+/// it is also perfectly safe to transfer or share ownership of [`Client`] across threads.
 unsafe impl Sync for Client {}
 unsafe impl Send for Client {}
 
@@ -599,7 +611,7 @@ impl Drop for UninitializedClient {
 
 impl UninitializedClient {
     /// Initialize the mpv core. Consumes the uninitialized client and returns
-    /// a ready-to-use `Client`.
+    /// a ready-to-use [`Client`].
     ///
     /// # Errors
     /// Returns an mpv error if initialization fails.
@@ -690,7 +702,7 @@ impl fmt::Display for Event<'_> {
 }
 
 impl<'h> Property<'h> {
-    /// Wrap a raw `mpv_event_property`
+    /// Wrap a raw [`mpv_event_property`]
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
@@ -722,7 +734,7 @@ impl fmt::Display for Property<'_> {
 }
 
 impl LogMessage<'_> {
-    /// Wrap a raw `mpv_event_log_message`
+    /// Wrap a raw [`mpv_event_log_message`]
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
@@ -737,7 +749,7 @@ impl fmt::Display for LogMessage<'_> {
 }
 
 impl StartFile<'_> {
-    /// Wrap a raw `mpv_event_start_file`
+    /// Wrap a raw [`mpv_event_start_file`]
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
@@ -758,7 +770,7 @@ impl fmt::Display for StartFile<'_> {
 }
 
 impl EndFile<'_> {
-    /// Wrap a raw `mpv_event_end_file`
+    /// Wrap a raw [`mpv_event_end_file`]
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
@@ -773,7 +785,7 @@ impl fmt::Display for EndFile<'_> {
 }
 
 impl<'h> ClientMessage<'h> {
-    /// Wrap a raw `mpv_event_client_message`.
+    /// Wrap a raw [`mpv_event_client_message`].
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
@@ -811,20 +823,20 @@ impl fmt::Display for ClientMessage<'_> {
 }
 
 impl<'h> Hook<'h> {
-    /// Wrap a raw `mpv_event_hook`.
+    /// Wrap a raw [`mpv_event_hook`].
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
         Self(ptr.cast::<mpv_event_hook>(), PhantomData)
     }
 
-    /// The hook name as passed to `Handle::hook_add`.
+    /// The hook name as passed to [`Handle::hook_add`].
     #[must_use]
     pub fn name(&self) -> &'h str {
         unsafe { CStr::from_ptr((*self.0).name).to_str().unwrap_or("unknown") }
     }
 
-    /// Internal ID that must be passed to `Handle::hook_continue`.
+    /// Internal ID that must be passed to [`Handle::hook_continue`].
     #[must_use]
     pub const fn id(&self) -> u64 {
         unsafe { (*self.0).id }

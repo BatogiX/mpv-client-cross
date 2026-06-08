@@ -55,10 +55,6 @@ pub struct Handle {
 
 pub struct EventQueueToken(i64);
 
-// SAFETY: The token represents exclusive access to the event queue.
-// It is safe to send to another thread, but cannot be shared concurrently (!Sync).
-unsafe impl Send for EventQueueToken {}
-
 /// A type representing an owned client context.
 pub struct Client(*mut mpv_handle);
 

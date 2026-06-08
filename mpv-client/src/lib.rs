@@ -5,7 +5,7 @@
 mod error;
 mod format;
 mod logging;
-pub mod node;
+mod node;
 mod options;
 
 pub use error::{Error, Result};

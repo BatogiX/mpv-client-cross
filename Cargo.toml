@@ -18,7 +18,7 @@ serde = "1"
 syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
 
 # bindgen feature
 bindgen = "0.72"

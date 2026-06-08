@@ -122,8 +122,8 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
         LogFile { file, start_time }
     });
 
-    let logger = Box::leak(Box::new(MpvLogger { module, log_file }));
-    log::set_logger(logger)?;
+    let logger = Box::new(MpvLogger { module, log_file });
+    log::set_boxed_logger(logger)?;
     log::set_max_level(log::LevelFilter::Info);
     Ok(())
 }

@@ -27,12 +27,14 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
     mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
     mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node,
-    mpv_observe_property, mpv_request_event, mpv_set_property, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
+    mpv_observe_property, mpv_request_event, mpv_request_log_messages, mpv_set_property, mpv_unobserve_property,
+    mpv_wait_event, mpv_wakeup,
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
     collections::HashMap,
     convert::Into,
+    default,
     ffi::{CStr, CString, c_char, c_void},
     fmt, fs, iter,
     marker::PhantomData,
@@ -548,8 +550,23 @@ impl Handle {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
 
-    pub fn request_log_messages(&self, min_level: impl Into<Vec<u8>>) -> Result<()> {
-        unimplemented!()
+    /// Enable or disable receiving of log messages.
+    ///
+    /// These are the messages the command line player prints to the terminal.
+    /// This call sets the minimum required log level for a message to be
+    /// received with [`mpv_event_id_MPV_EVENT_LOG_MESSAGE`].
+    ///
+    /// # Arguments
+    ///
+    /// * `min_level` - Minimal log level. `LogLevel::None` disables all messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying [`mpv_request_log_messages`] call fails.
+    pub fn request_log_messages(&self, min_level: LogLevel) -> Result<()> {
+        let handle = self.as_ptr().cast_mut();
+        let c_min_level_ptr = min_level.as_cstr().as_ptr();
+        unsafe { result!(mpv_request_log_messages(handle, c_min_level_ptr)) }
     }
 
     pub fn get_property_async(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
@@ -1127,5 +1144,36 @@ impl<'h> Hook<'h> {
 impl fmt::Display for Hook<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub enum LogLevel {
+    #[default]
+    None,
+    Fatal,
+    Error,
+    Warn,
+    Info,
+    V,
+    Debug,
+    Trace,
+    TerminalDefault,
+}
+
+impl LogLevel {
+    #[must_use]
+    pub const fn as_cstr(&self) -> &'static CStr {
+        match self {
+            Self::None => c"no",
+            Self::Fatal => c"fatal",
+            Self::Error => c"error",
+            Self::Warn => c"warn",
+            Self::Info => c"info",
+            Self::V => c"v",
+            Self::Debug => c"debug",
+            Self::Trace => c"trace",
+            Self::TerminalDefault => c"terminal-default",
+        }
     }
 }

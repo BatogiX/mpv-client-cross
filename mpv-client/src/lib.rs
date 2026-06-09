@@ -16,8 +16,8 @@ pub use node::Node;
 use crate::{node::MpvNodeContentsGuard, options::CoercingString};
 
 use mpv_client_sys::{
-    mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret,
-    mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM,
+    mpv_abort_async_command, mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async,
+    mpv_command_ret, mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM,
     mpv_error_MPV_ERROR_SUCCESS, mpv_error_string, mpv_event, mpv_event_client_message, mpv_event_end_file,
     mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
     mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED,
@@ -606,8 +606,42 @@ impl Handle {
         unsafe { mpv_get_time_us(self.as_ptr().cast_mut()) }
     }
 
+    /// Signals to all async requests with the matching ID to abort.
+    ///
+    /// This affects the following API calls:
+    /// * [`Handle::command_async()`]
+    /// * [`mpv_command_node_async()`]
+    ///
+    /// All of these functions take a `reply` parameter. This function
+    /// tells all requests with the matching `reply` value to try to return
+    /// as soon as possible. If there are multiple requests with a matching ID, it
+    /// aborts all of them.
+    ///
+    /// # Async Behavior
+    ///
+    /// This function is mostly asynchronous itself. It will not wait until the
+    /// command is aborted. Instead, the command will terminate as usual, but with
+    /// some work left undone.
+    /// * How this is signaled depends on the specific command (for example, the `subprocess`
+    ///   command will indicate it by setting `killed_by_us` to `true` in the result).
+    /// * How long it takes also depends on the situation. The aborting process is
+    ///   completely asynchronous.
+    ///
+    /// Not all commands may support this functionality; if unsupported, this function
+    /// will have no effect. The same is true if the request using the passed `reply`
+    /// has already terminated, has not been started yet, or was never in use at all.
+    ///
+    /// # Race Conditions
+    ///
+    /// You have to be careful of race conditions: the time during which the abort
+    /// request will be effective is **after** the asynchronous command (e.g., [`Handle::command_async()`])
+    /// has returned, and **before** the command has signaled completion with [`mpv_event_id_MPV_EVENT_COMMAND_REPLY`].
+    ///
+    /// # Arguments
+    ///
+    /// * `reply` - The ID of the request to be aborted.
     pub fn abort_async_command(&self, reply: u64) {
-        unimplemented!()
+        unsafe { mpv_abort_async_command(self.as_ptr().cast_mut(), reply) }
     }
 
     /// Returns a string describing the event.

@@ -212,12 +212,6 @@ impl Handle {
         (handle, EventQueueToken(id))
     }
 
-    #[inline]
-    #[must_use]
-    const fn as_ptr(&self) -> *const mpv_handle {
-        self.inner.as_ptr()
-    }
-
     /// Create a new client handle connected to the same player core as [`Handle`]. This
     /// context has its own event queue, its own [`Self::request_event()`] state, its own
     /// [`Self::request_log_messages()`] state, its own set of observed properties, and
@@ -616,9 +610,32 @@ impl Handle {
         unimplemented!()
     }
 
+    /// Returns a string describing the event.
+    ///
+    /// For unknown events, [`None`] is returned. Note that all events actually
+    /// returned by the API will also yield a `Some(&str)` with this function.
+    ///
+    /// The returned string is completely static (valid for the lifetime of the program)
+    /// and does not need to be deallocated.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The event ID (corresponding to [`mpv_client_sys::mpv_event_id`]).
+    ///
+    /// # Returns
+    ///
+    /// A short symbolic name of the event suitable for use in scripting interfaces.
+    /// It consists of lower-case alphanumeric characters and can include `-` characters.
     #[must_use]
-    pub fn event_name(&self, event: u32) -> Option<String> {
-        unimplemented!()
+    pub fn event_name(event: u32) -> Option<&'static str> {
+        unsafe {
+            let ptr = mpv_event_name(event);
+            if ptr.is_null() {
+                return None;
+            }
+
+            CStr::from_ptr(ptr).to_str().ok()
+        }
     }
 
     pub fn request_event(&self, event: u32, enable: i32) -> Result<()> {
@@ -702,6 +719,12 @@ impl Handle {
     /// Returns [`log::SetLoggerError`] if a logger is already set.
     pub fn initialize_logging(&self) -> std::result::Result<(), log::SetLoggerError> {
         logging::init(self)
+    }
+
+    #[inline]
+    #[must_use]
+    const fn as_ptr(&self) -> *const mpv_handle {
+        self.inner.as_ptr()
     }
 }
 

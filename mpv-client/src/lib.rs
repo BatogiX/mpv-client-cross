@@ -27,7 +27,7 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
     mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
     mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_node, mpv_observe_property, mpv_set_property,
-    mpv_unobserve_property, mpv_wait_event,
+    mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
@@ -642,8 +642,20 @@ impl Handle {
         unimplemented!()
     }
 
+    /// Interrupts the current [`Handle::wait_event()`] call.
+    ///
+    /// This will wake up the thread currently waiting in [`Handle::wait_event()`]. If no
+    /// thread is waiting, the next [`Handle::wait_event()`] call will return immediately
+    /// (this is to avoid lost wakeups).
+    ///
+    /// [`Handle::wait_event()`] will receive a [`mpv_event_id_MPV_EVENT_NONE`] if it is woken up due to
+    /// this call. However, note that this dummy event might be skipped if there are
+    /// already other events queued. All that matters is that the waiting thread
+    /// is woken up at all.
+    ///
+    /// This function is **safe** to be called from `mpv` render API threads.
     pub fn wakeup(&self) {
-        unimplemented!()
+        unsafe { mpv_wakeup(self.as_ptr().cast_mut()) }
     }
 
     pub fn set_wakeup_callback(&self) {

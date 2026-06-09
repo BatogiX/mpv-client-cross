@@ -1021,31 +1021,16 @@ impl Event<'_> {
 
 impl fmt::Display for Event<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let event = match *self {
-            Self::Shutdown => mpv_event_id_MPV_EVENT_SHUTDOWN,
-            Self::LogMessage(..) => mpv_event_id_MPV_EVENT_LOG_MESSAGE,
-            Self::GetPropertyReply(..) => mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY,
-            Self::SetPropertyReply(..) => mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
-            Self::CommandReply(..) => mpv_event_id_MPV_EVENT_COMMAND_REPLY,
-            Self::StartFile(..) => mpv_event_id_MPV_EVENT_START_FILE,
-            Self::EndFile(..) => mpv_event_id_MPV_EVENT_END_FILE,
-            Self::FileLoaded => mpv_event_id_MPV_EVENT_FILE_LOADED,
-            Self::ClientMessage(..) => mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
-            Self::VideoReconfig => mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
-            Self::AudioReconfig => mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
-            Self::Seek => mpv_event_id_MPV_EVENT_SEEK,
-            Self::PlaybackRestart => mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
-            Self::PropertyChange(..) => mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
-            Self::QueueOverflow => mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW,
-            Self::Hook(..) => mpv_event_id_MPV_EVENT_HOOK,
-            Self::None => mpv_event_id_MPV_EVENT_NONE,
-        };
+        match *self {
+            Event::LogMessage(ref msg) => write!(f, "{msg}"),
+            _ => Ok(()),
+        }
 
-        f.write_str(unsafe {
-            CStr::from_ptr(mpv_event_name(event))
-                .to_str()
-                .unwrap_or("unknown event")
-        })
+        // f.write_str(unsafe {
+        //     CStr::from_ptr(mpv_event_name(event))
+        //         .to_str()
+        //         .unwrap_or("unknown event")
+        // })
     }
 }
 
@@ -1088,11 +1073,31 @@ impl LogMessage<'_> {
         assert!(!ptr.is_null());
         Self(ptr.cast::<mpv_event_log_message>(), PhantomData)
     }
+
+    #[must_use]
+    pub fn prefix(&self) -> &str {
+        unsafe { CStr::from_ptr((*self.0).prefix).to_str().unwrap_or("unknown") }
+    }
+
+    #[must_use]
+    pub fn level(&self) -> &str {
+        unsafe { CStr::from_ptr((*self.0).level).to_str().unwrap_or("unknown") }
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &str {
+        unsafe { CStr::from_ptr((*self.0).text).to_str().unwrap_or("unknown") }
+    }
+
+    #[must_use]
+    pub const fn log_level(&self) -> u32 {
+        unsafe { (*self.0).log_level }
+    }
 }
 
 impl fmt::Display for LogMessage<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("log message")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] [{}] {}", self.level(), self.prefix(), self.text())
     }
 }
 

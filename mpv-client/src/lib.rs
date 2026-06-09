@@ -33,6 +33,7 @@ use serde::de::{self, DeserializeOwned};
 use std::{
     borrow::Cow,
     collections::HashMap,
+    convert::{self, Into},
     ffi::{CStr, CString, c_char, c_void},
     fmt, fs, iter,
     marker::PhantomData,
@@ -231,12 +232,12 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_client<'a, S: Into<Cow<'a, str>>>(&self, name: Option<S>) -> Result<(Client, EventQueueToken)> {
-        let name = name.map(|n| n.into()).filter(|n| !n.is_empty());
-        let c_name = match name {
-            Some(n) => Some(CString::new(n.into_owned())?),
-            None => None,
-        };
+    pub fn create_client(&self, name: Option<&str>) -> Result<(Client, EventQueueToken)> {
+        let c_name = name
+            .map(Into::into)
+            .filter(|n: &Vec<u8>| !n.is_empty())
+            .map(CString::new)
+            .transpose()?;
 
         let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
         let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name_ptr) };
@@ -269,12 +270,12 @@ impl Handle {
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails (e.g. out of memory).
-    pub fn create_weak_client<'a, S: Into<Cow<'a, str>>>(&self, name: Option<S>) -> Result<(Client, EventQueueToken)> {
-        let name = name.map(|n| n.into()).filter(|n| !n.is_empty());
-        let c_name = match name {
-            Some(n) => Some(CString::new(n.into_owned())?),
-            None => None,
-        };
+    pub fn create_weak_client(&self, name: Option<&str>) -> Result<(Client, EventQueueToken)> {
+        let c_name = name
+            .map(Into::into)
+            .filter(|n: &Vec<u8>| !n.is_empty())
+            .map(CString::new)
+            .transpose()?;
 
         let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
         let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name_ptr) };
@@ -368,14 +369,14 @@ impl Handle {
     ///
     /// # Panics
     /// Panics if any argument contains a null byte.
-    pub fn command<'a, I, S>(&self, args: I) -> Result<()>
+    pub fn command<I, S>(&self, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
-        S: Into<Cow<'a, str>>,
+        S: Into<Vec<u8>>,
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.into().into_owned()).expect("input contains null byte"))
+            .map(|s| CString::new(s.into()).expect("input contains null byte"))
             .collect();
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
@@ -393,7 +394,7 @@ impl Handle {
     pub fn command_ret<'a, I, S>(&self, args: I) -> Result<Node>
     where
         I: IntoIterator<Item = S>,
-        S: Into<Cow<'a, str>>,
+        S: Into<Vec<u8>>,
     {
         let args: Vec<CString> = args
             .into_iter()
@@ -429,14 +430,14 @@ impl Handle {
     ///
     /// # Panics
     /// Panics if any argument contains a null byte.
-    pub fn command_async<'a, I, S>(&self, reply: u64, args: I) -> Result<()>
+    pub fn command_async<I, S>(&self, reply: u64, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
-        S: Into<Cow<'a, str>>,
+        S: Into<Vec<u8>>,
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.into().into_owned()).expect("input contains null byte"))
+            .map(|s| CString::new(s.into()).expect("input contains null byte"))
             .collect();
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
@@ -451,8 +452,8 @@ impl Handle {
 
     /// # Errors
     /// Returns an mpv error if the property cannot be set.
-    pub fn set_property<'a, S: Into<Cow<'a, str>>, T: Format>(&self, name: S, data: T) -> Result<()> {
-        let name = CString::new(name.into().into_owned())?;
+    pub fn set_property<T: Format>(&self, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
+        let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
@@ -466,16 +467,16 @@ impl Handle {
     /// # Errors
     /// Returns an mpv error if the property cannot be read, or if the format
     /// doesn't match the internal format.
-    pub fn get_property<'a, S: Into<Cow<'a, str>>, T: Format>(&self, name: S) -> Result<T> {
-        let name = CString::new(name.into().into_owned())?;
+    pub fn get_property<T: Format>(&self, name: impl AsRef<Vec<u8>>) -> Result<T> {
+        let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
 
     /// # Errors
     /// Returns an mpv error if property observation fails.
-    pub fn observe_property<'a, S: Into<Cow<'a, str>>, T: Format>(&self, reply: u64, name: S) -> Result<()> {
-        let name = CString::new(name.into().into_owned())?;
+    pub fn observe_property<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
+        let name = CString::new(name.into())?;
         unsafe {
             result!(mpv_observe_property(
                 self.as_ptr().cast_mut(),
@@ -537,8 +538,8 @@ impl Handle {
     ///
     /// # Errors
     /// Returns an mpv error if the hook cannot be added.
-    pub fn hook_add<'a, S: Into<Cow<'a, str>>>(&self, reply: u64, name: S, priority: i32) -> Result<()> {
-        let name = CString::new(name.into().into_owned())?;
+    pub fn hook_add(&self, reply: u64, name: impl Into<Vec<u8>>, priority: i32) -> Result<()> {
+        let name = CString::new(name.into())?;
         unsafe { result!(mpv_hook_add(self.as_ptr().cast_mut(), reply, name.as_ptr(), priority)) }
     }
 
@@ -548,15 +549,15 @@ impl Handle {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
 
-    pub fn request_log_messages<'a, S: Into<Cow<'a, str>>>(&self, min_level: S) -> Result<()> {
+    pub fn request_log_messages<S: Into<Vec<u8>>>(&self, min_level: S) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn get_property_async<'a, S: Into<Cow<'a, str>>>(&self, reply: u64, name: S) -> Result<()> {
+    pub fn get_property_async<S: Into<Vec<u8>>>(&self, reply: u64, name: S) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn set_property_async<'a, S: Into<Cow<'a, str>>, T: Format>(&self, reply: u64, name: S, data: T) -> Result<()> {
+    pub fn set_property_async<S: Into<Vec<u8>>, T: Format>(&self, reply: u64, name: S, data: T) -> Result<()> {
         unimplemented!()
     }
 
@@ -603,9 +604,20 @@ impl Handle {
     /// * [`mpv_client_sys::mpv_error_MPV_ERROR_INVALID_PARAMETER`] - The file was not found.
     /// * [`mpv_client_sys::mpv_error_MPV_ERROR_OPTION_ERROR`] - A fatal error happened while parsing the config file.
     /// * [`std::ffi::NulError`] - Returned if `filename` contains an internal null byte, making it an invalid C-string.
-    pub fn load_config_file<'a, S: Into<Cow<'a, str>>>(&self, filename: S) -> Result<()> {
+    pub fn load_config_file(&self, filename: impl AsRef<Path>) -> Result<()> {
         let handle = self.as_ptr().cast_mut();
-        let filename_c = CString::new(filename.into().into_owned())?;
+        let filename = filename.as_ref();
+
+        let filename_c = {
+            #[cfg(unix)]
+            let bytes = filename.as_os_str().as_encoded_bytes();
+
+            #[cfg(not(unix))]
+            let bytes = filename.to_string_lossy();
+
+            CString::new(bytes.as_ref())?
+        };
+
         unsafe { result!(mpv_load_config_file(handle, filename_c.as_ptr())) }
     }
 
@@ -767,7 +779,7 @@ impl Handle {
         }
 
         let Node::Map(script_opts) = self
-            .get_property::<&str, Node>("script-opts")
+            .get_property::<Node>("script-opts")
             .expect("'script-opts' property unavailable")
         else {
             unreachable!("'script-opts' always return a Map variant")

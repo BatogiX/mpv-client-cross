@@ -25,16 +25,15 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
     mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
     mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
-    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
-    mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node,
-    mpv_observe_property, mpv_request_event, mpv_request_log_messages, mpv_set_property, mpv_unobserve_property,
-    mpv_wait_event, mpv_wakeup,
+    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property,
+    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
+    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
+    mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
     collections::HashMap,
     convert::Into,
-    default,
     ffi::{CStr, CString, c_char, c_void},
     fmt, fs, iter,
     marker::PhantomData,
@@ -459,6 +458,40 @@ impl Handle {
         data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
     }
 
+    /// Set a property asynchronously.
+    ///
+    /// You will receive the result of the operation as an [`mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY`]
+    /// event. The [`mpv_event::error`] field will contain the result status of the operation.
+    /// Otherwise, this function is similar to [`mpv_set_property`].
+    ///
+    /// # Thread Safety
+    ///
+    /// Safe to be called from mpv render API threads.
+    ///
+    /// # Arguments
+    ///
+    /// * `reply` - An arbitrary 64-bit value used to identify the asynchronous response.
+    ///   See the section about asynchronous calls in the mpv documentation.
+    /// * `name` - The property name as a null-terminated C-string.
+    /// * `data` - A pointer to the option value. The value will be copied internally by `mpv`
+    ///   during the call, so the caller retains ownership of the original memory.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the asynchronous request was successfully queued.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `name` contains an internal null byte, making it an invalid C-string.
+    /// - The underlying [`mpv_set_property_async`] call fails to send the request (e.g., if the context is invalid).
+    pub fn set_property_async<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
+        let c_name = CString::new(name.into())?;
+        let c_name_ptr = c_name.as_ptr();
+        let handle = self.as_ptr().cast_mut();
+        data.to_mpv(|data| unsafe { result!(mpv_set_property_async(handle, reply, c_name_ptr, T::MPV_FORMAT, data)) })
+    }
+
     /// Read the value of the given property.
     ///
     /// If the format doesn't match with the internal format of the property, access
@@ -472,6 +505,37 @@ impl Handle {
         let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
+    }
+
+    /// Get a property asynchronously.
+    ///
+    /// You will receive the result of the operation as well as the property data
+    /// with the [`mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY`] event. You should check the
+    /// [`mpv_event::error`] field on the reply event.
+    ///
+    /// # Thread Safety
+    ///
+    /// Safe to be called from mpv render API threads.
+    ///
+    /// # Arguments
+    ///
+    /// * `reply_userdata` - An arbitrary 64-bit value used to identify the asynchronous response.
+    ///   See the section about asynchronous calls in the mpv documentation.
+    /// * `name` - The property name as a null-terminated C-string.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the asynchronous request was successfully queued.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `name` contains an internal null byte, making it an invalid C-string.
+    /// - The underlying `mpv_get_property_async` call fails to send the request (e.g., if the context is invalid).
+    pub fn get_property_async<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
+        let name = CString::new(name.into())?;
+        let handle = self.as_ptr().cast_mut();
+        unsafe { result!(mpv_get_property_async(handle, reply, name.as_ptr(), T::MPV_FORMAT)) }
     }
 
     /// # Errors
@@ -567,14 +631,6 @@ impl Handle {
         let handle = self.as_ptr().cast_mut();
         let c_min_level_ptr = min_level.as_cstr().as_ptr();
         unsafe { result!(mpv_request_log_messages(handle, c_min_level_ptr)) }
-    }
-
-    pub fn get_property_async(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
-        unimplemented!()
-    }
-
-    pub fn set_property_async<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
-        unimplemented!()
     }
 
     /// Return the `MPV_CLIENT_API_VERSION` the mpv source has been compiled with.

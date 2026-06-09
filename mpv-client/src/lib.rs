@@ -26,8 +26,8 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
     mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
     mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
-    mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_node, mpv_observe_property, mpv_set_property,
-    mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
+    mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node,
+    mpv_observe_property, mpv_set_property, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
@@ -575,8 +575,38 @@ impl Handle {
         }
     }
 
-    pub fn load_config_file<P: AsRef<Path>>(&self, filename: P) -> Result<()> {
-        unimplemented!()
+    /// Loads a configuration file.
+    ///
+    /// This function loads and parses the file, and sets every entry in the config
+    /// file's default section as if [`mpv_set_option_string()`] was called.
+    ///
+    /// # Path Requirements
+    ///
+    /// The `filename` should be an **absolute path**. If it isn't, the actual path used
+    /// is unspecified. (Note: an absolute path starts with `/` on UNIX-like systems).
+    ///
+    /// # Error Handling
+    ///
+    /// If a fatal error happens when parsing a config file, errors when setting options
+    /// as well as other types of errors are ignored (even if options do not exist).
+    /// You can still try to capture the resulting error messages with [`Handle::request_log_messages()`].
+    /// Note that it's possible that some options were successfully set even if an error occurs.
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - Absolute path to the config file on the local filesystem.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration file could not be loaded or parsed correctly.
+    /// Common error variants include:
+    /// * [`mpv_client_sys::mpv_error_MPV_ERROR_INVALID_PARAMETER`] - The file was not found.
+    /// * [`mpv_client_sys::mpv_error_MPV_ERROR_OPTION_ERROR`] - A fatal error happened while parsing the config file.
+    /// * [`std::ffi::NulError`] - Returned if `filename` contains an internal null byte, making it an invalid C-string.
+    pub fn load_config_file<'a, S: Into<Cow<'a, str>>>(&self, filename: S) -> Result<()> {
+        let handle = self.as_ptr().cast_mut();
+        let filename_c = CString::new(filename.into().into_owned())?;
+        unsafe { result!(mpv_load_config_file(handle, filename_c.as_ptr())) }
     }
 
     /// Returns the internal time in nanoseconds.

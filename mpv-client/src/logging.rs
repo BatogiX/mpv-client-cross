@@ -64,11 +64,7 @@ impl Log for MpvLogger {
 
 pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
     let module = mp.name().to_owned();
-
-    let path_log_file = mp
-        .get_property::<String>("log-file")
-        .expect("log-file property must exist");
-
+    let path_log_file: String = mp.get_property("log-file").expect("log-file property must exist");
     let path_log_file = if path_log_file.starts_with('~') {
         let node = mp
             .command_ret(["expand-path", &path_log_file])

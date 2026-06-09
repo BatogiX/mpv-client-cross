@@ -27,7 +27,7 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
     mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
     mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node,
-    mpv_observe_property, mpv_set_property, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
+    mpv_observe_property, mpv_request_event, mpv_set_property, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
@@ -713,8 +713,32 @@ impl Handle {
         }
     }
 
+    /// Enable or disable the given event.
+    ///
+    /// Some events are enabled by default. Some events can't be disabled.
+    ///
+    /// *(Informational note: currently, all events are enabled by default, except
+    /// [`mpv_client_sys::mpv_event_id_MPV_EVENT_TICK`].)*
+    ///
+    /// # Thread Safety
+    ///
+    /// Safe to be called from mpv render API threads.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The event to enable or disable. See [`mpv_client_sys::mpv_event_id`].
+    /// * `enable` - `1` to enable receiving this event, `0` to disable it.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the event state was successfully updated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying [`mpv_request_event`] call fails (returns a negative error code),
+    /// which can happen if the event API is uninitialized or the event cannot be disabled.
     pub fn request_event(&self, event: u32, enable: i32) -> Result<()> {
-        unimplemented!()
+        unsafe { result!(mpv_request_event(self.as_ptr().cast_mut(), event, enable)) }
     }
 
     /// Interrupts the current [`Handle::wait_event()`] call.

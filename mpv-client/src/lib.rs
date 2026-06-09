@@ -548,7 +548,9 @@ impl Handle {
     /// which the given number was passed as reply to [`Handle::observe_property`].
     ///
     /// Safe to be called from mpv render API threads.
+    ///
     /// # Errors
+    ///
     /// Returns an mpv error code, or 0 on success.
     pub fn unobserve_property(&self, registered_reply: u64) -> Result<i32> {
         unsafe { result_with_code!(mpv_unobserve_property(self.as_ptr().cast_mut(), registered_reply)) }
@@ -1129,8 +1131,13 @@ impl EndFile<'_> {
     }
 
     #[must_use]
-    pub const fn error(&self) -> i32 {
-        unsafe { (*self.0).error }
+    pub fn error(&self) -> Result<()> {
+        let code = unsafe { (*self.0).error };
+        if self.reason() == EndFileReason::Error {
+            Err(Error::from(code))
+        } else {
+            Ok(())
+        }
     }
 
     #[must_use]

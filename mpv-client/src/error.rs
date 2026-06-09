@@ -1,6 +1,6 @@
 use crate::Handle;
 use mpv_client_sys::{
-    mpv_error_MPV_ERROR_AO_INIT_FAILED, mpv_error_MPV_ERROR_COMMAND, mpv_error_MPV_ERROR_EVENT_QUEUE_FULL,
+    mpv_error, mpv_error_MPV_ERROR_AO_INIT_FAILED, mpv_error_MPV_ERROR_COMMAND, mpv_error_MPV_ERROR_EVENT_QUEUE_FULL,
     mpv_error_MPV_ERROR_GENERIC, mpv_error_MPV_ERROR_INVALID_PARAMETER, mpv_error_MPV_ERROR_LOADING_FAILED,
     mpv_error_MPV_ERROR_NOMEM, mpv_error_MPV_ERROR_NOT_IMPLEMENTED, mpv_error_MPV_ERROR_NOTHING_TO_PLAY,
     mpv_error_MPV_ERROR_OPTION_ERROR, mpv_error_MPV_ERROR_OPTION_FORMAT, mpv_error_MPV_ERROR_OPTION_NOT_FOUND,
@@ -54,8 +54,8 @@ pub enum MpvError {
     Generic = mpv_error_MPV_ERROR_GENERIC,
 }
 
-impl From<i32> for Error {
-    fn from(code: i32) -> Self {
+impl From<mpv_error> for Error {
+    fn from(code: mpv_error) -> Self {
         match code {
             mpv_error_MPV_ERROR_SUCCESS => Self::MpvKnown(MpvError::Success),
             mpv_error_MPV_ERROR_NOMEM => Self::MpvKnown(MpvError::Nomem),

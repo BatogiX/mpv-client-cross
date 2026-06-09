@@ -21,6 +21,7 @@ mpv-client-sys.workspace = true
 mpv-client-macros = { workspace = true, optional = true }
 serde.workspace = true
 log.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

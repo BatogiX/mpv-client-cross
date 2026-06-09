@@ -18,6 +18,7 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
 log = { version = "0.4", features = ["std"] }
+thiserror = "2"
 
 # bindgen feature
 bindgen = "0.72"

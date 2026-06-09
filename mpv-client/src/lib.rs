@@ -8,33 +8,31 @@ mod logging;
 mod node;
 mod options;
 
+use crate::{error::MpvError, node::MpvNodeContentsGuard, options::CoercingString};
 pub use error::{Error, Result};
 pub use format::Format;
 pub use mpv_client_sys::mpv_handle;
-pub use node::Node;
-
-use crate::{node::MpvNodeContentsGuard, options::CoercingString};
-
 use mpv_client_sys::{
     mpv_abort_async_command, mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async,
-    mpv_command_ret, mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM,
-    mpv_error_MPV_ERROR_SUCCESS, mpv_error_string, mpv_event, mpv_event_client_message, mpv_event_end_file,
-    mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
-    mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED,
-    mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE,
-    mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
-    mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
-    mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
-    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property,
-    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
-    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
-    mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
+    mpv_command_ret, mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_string, mpv_event,
+    mpv_event_client_message, mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
+    mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE,
+    mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK,
+    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
+    mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
+    mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
+    mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
+    mpv_event_start_file, mpv_get_property, mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add,
+    mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event,
+    mpv_request_log_messages, mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_event,
+    mpv_wakeup,
 };
+pub use node::Node;
 use serde::de::{self, DeserializeOwned};
 use std::{
     collections::HashMap,
     convert::Into,
-    ffi::{CStr, CString, c_char, c_void},
+    ffi::{CStr, CString, NulError, c_char, c_void},
     fmt, fs, iter,
     marker::PhantomData,
     mem::MaybeUninit,
@@ -150,22 +148,25 @@ pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Ha
 pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
 
 macro_rules! result {
-    ($f:expr) => {
-        match $f {
-            mpv_error_MPV_ERROR_SUCCESS => Ok(()),
-            e => Err(Error::new(e)),
+    ($f:expr) => {{
+        let code = $f;
+        if code == mpv_client_sys::mpv_error_MPV_ERROR_SUCCESS {
+            Ok(())
+        } else {
+            Err(crate::error::Error::from(code))
         }
-    };
+    }};
 }
 
 macro_rules! result_with_code {
-    ($f:expr) => {
-        if $f >= mpv_error_MPV_ERROR_SUCCESS {
-            Ok($f)
+    ($f:expr) => {{
+        let code = $f;
+        if code >= mpv_client_sys::mpv_error_MPV_ERROR_SUCCESS {
+            Ok(code)
         } else {
-            Err(Error::new($f))
+            Err(crate::error::Error::from(code))
         }
-    };
+    }};
 }
 
 #[macro_export]
@@ -242,7 +243,7 @@ impl Handle {
         let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
         let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name_ptr) };
         if handle.is_null() {
-            Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
+            Err(Error::MpvKnown(MpvError::Nomem))
         } else {
             let id = unsafe { mpv_client_id(handle) };
             Ok((Client(handle), EventQueueToken(id)))
@@ -280,7 +281,7 @@ impl Handle {
         let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
         let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name_ptr) };
         if handle.is_null() {
-            Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
+            Err(Error::MpvKnown(MpvError::Nomem))
         } else {
             let id = unsafe { mpv_client_id(handle) };
             Ok((Client(handle), EventQueueToken(id)))
@@ -366,9 +367,6 @@ impl Handle {
     ///
     /// # Errors
     /// Returns an mpv error if the command fails.
-    ///
-    /// # Panics
-    /// Panics if any argument contains a null byte.
     pub fn command<I, S>(&self, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
@@ -376,8 +374,8 @@ impl Handle {
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.into()).expect("input contains null byte"))
-            .collect();
+            .map(|s| CString::new(s.into()))
+            .collect::<std::result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         unsafe { result!(mpv_command(self.as_ptr().cast_mut(), raw_args.as_mut_ptr())) }
@@ -388,9 +386,6 @@ impl Handle {
     /// # Errors
     /// Returns an mpv error if the command fails, or if the result cannot be
     /// converted to a [`Node`].
-    ///
-    /// # Panics
-    /// Panics if any argument contains a null byte.
     pub fn command_ret<I, S>(&self, args: I) -> Result<Node>
     where
         I: IntoIterator<Item = S>,
@@ -398,8 +393,8 @@ impl Handle {
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.into()).expect("input contains null byte"))
-            .collect();
+            .map(|s| CString::new(s.into()))
+            .collect::<std::result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         let mut res = MaybeUninit::<mpv_node>::zeroed();
@@ -427,9 +422,6 @@ impl Handle {
     ///
     /// # Errors
     /// Returns an mpv error if the command fails.
-    ///
-    /// # Panics
-    /// Panics if any argument contains a null byte.
     pub fn command_async<I, S>(&self, reply: u64, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
@@ -437,8 +429,8 @@ impl Handle {
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.into()).expect("input contains null byte"))
-            .collect();
+            .map(|s| CString::new(s.into()))
+            .collect::<std::result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         unsafe {
@@ -926,7 +918,7 @@ impl Client {
         let handle = unsafe { mpv_create() };
 
         if handle.is_null() {
-            Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
+            Err(Error::MpvKnown(MpvError::Nomem))
         } else {
             let id = unsafe { mpv_client_id(handle) };
             Ok((UninitializedClient(handle), EventQueueToken(id)))
@@ -1130,6 +1122,31 @@ impl EndFile<'_> {
         assert!(!ptr.is_null());
         Self(ptr.cast::<mpv_event_end_file>(), PhantomData)
     }
+
+    #[must_use]
+    pub fn reason(&self) -> EndFileReason {
+        unsafe { EndFileReason::from((*self.0).reason) }
+    }
+
+    #[must_use]
+    pub const fn error(&self) -> i32 {
+        unsafe { (*self.0).error }
+    }
+
+    #[must_use]
+    pub const fn playlist_entry_id(&self) -> i64 {
+        unsafe { (*self.0).playlist_entry_id }
+    }
+
+    #[must_use]
+    pub const fn playlist_insert_id(&self) -> i64 {
+        unsafe { (*self.0).playlist_insert_id }
+    }
+
+    #[must_use]
+    pub const fn playlist_insert_num_entries(&self) -> i32 {
+        unsafe { (*self.0).playlist_insert_num_entries }
+    }
 }
 
 impl fmt::Display for EndFile<'_> {
@@ -1230,6 +1247,30 @@ impl LogLevel {
             Self::Debug => c"debug",
             Self::Trace => c"trace",
             Self::TerminalDefault => c"terminal-default",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum EndFileReason {
+    Eof = 0,
+    Stop = 2,
+    Quit = 3,
+    Error = 4,
+    Redirect = 5,
+    Unknown(u32),
+}
+
+impl From<u32> for EndFileReason {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => Self::Eof,
+            2 => Self::Stop,
+            3 => Self::Quit,
+            4 => Self::Error,
+            5 => Self::Redirect,
+            value => Self::Unknown(value),
         }
     }
 }

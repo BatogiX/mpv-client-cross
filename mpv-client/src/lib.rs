@@ -52,6 +52,7 @@ pub struct Handle {
     inner: [mpv_handle],
 }
 
+#[derive(Debug)]
 pub struct EventQueueToken(i64);
 
 /// A type representing an owned client context.
@@ -188,7 +189,7 @@ impl Handle {
     ///
     /// * `ptr` must point to a valid, fully initialized [`mpv_handle`] allocated by `libmpv`.
     ///
-    /// * The underlying memory referenced by the returned `Handle` must remain valid and
+    /// * The underlying memory referenced by the returned [`Handle`] must remain valid and
     ///   unfreed for the entire duration of lifetime `'a`.
     ///
     /// * No aliasing mutable references to the same [`mpv_handle`] may exist anywhere for
@@ -213,16 +214,38 @@ impl Handle {
 
     #[inline]
     #[must_use]
-    pub const fn as_ptr(&self) -> *const mpv_handle {
+    const fn as_ptr(&self) -> *const mpv_handle {
         self.inner.as_ptr()
     }
 
+    /// Create a new client handle connected to the same player core as [`Handle`]. This
+    /// context has its own event queue, its own [`Self::request_event()`] state, its own
+    /// [`Self::request_log_messages()`] state, its own set of observed properties, and
+    /// its own state for asynchronous operations. Otherwise, everything is shared.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The client name. This will be returned by [`Self::name()`]. If
+    ///   the name is already in use, or contains non-alphanumeric
+    ///   characters (other than `'_'`), the name is modified to fit.
+    ///   If [`None`], an arbitrary name is automatically chosen.
+    ///
+    /// # Returns
+    ///
+    /// * A new [`Client`] paired with an [`EventQueueToken`], or an error.
+    ///
     /// # Errors
     ///
     /// Returns an error if the mpv API call fails.
-    pub fn create_client<'a, S: Into<Cow<'a, str>>>(&self, name: S) -> Result<(Client, EventQueueToken)> {
-        let name = CString::new(name.into().into_owned())?;
-        let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name.as_ptr()) };
+    pub fn create_client<'a, S: Into<Cow<'a, str>>>(&self, name: Option<S>) -> Result<(Client, EventQueueToken)> {
+        let name = name.map(|n| n.into()).filter(|n| !n.is_empty());
+        let c_name = match name {
+            Some(n) => Some(CString::new(n.into_owned())?),
+            None => None,
+        };
+
+        let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
+        let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name_ptr) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
@@ -231,12 +254,36 @@ impl Handle {
         }
     }
 
+    /// This is the same as [`Self::create_client`], but the created [`Client`] handle is
+    /// treated as a weak reference. If all handles referencing a core are
+    /// weak references, the core is automatically destroyed.
+    ///
+    /// Effectively, if the last non-weak handle is destroyed (dropped), then the
+    /// weak handles receive [`mpv_event_id_MPV_EVENT_SHUTDOWN`] and are asked to terminate as well.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The client name. This will be returned by [`Self::name()`]. If
+    ///   the name is already in use, or contains non-alphanumeric
+    ///   characters (other than `'_'`), the name is modified to fit.
+    ///   If [`None`], an arbitrary name is automatically chosen.
+    ///
+    /// # Returns
+    ///
+    /// * A new weak [`Client`] paired with an [`EventQueueToken`], or an error.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the mpv API call fails.
-    pub fn create_weak_client<'a, S: Into<Cow<'a, str>>>(&self, name: S) -> Result<(Client, EventQueueToken)> {
-        let name = CString::new(name.into().into_owned())?;
-        let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name.as_ptr()) };
+    /// Returns an error if the mpv API call fails (e.g. out of memory).
+    pub fn create_weak_client<'a, S: Into<Cow<'a, str>>>(&self, name: Option<S>) -> Result<(Client, EventQueueToken)> {
+        let name = name.map(|n| n.into()).filter(|n| !n.is_empty());
+        let c_name = match name {
+            Some(n) => Some(CString::new(n.into_owned())?),
+            None => None,
+        };
+
+        let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
+        let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name_ptr) };
         if handle.is_null() {
             Err(Error::new(mpv_error_MPV_ERROR_NOMEM))
         } else {
@@ -308,7 +355,7 @@ impl Handle {
     /// IDs are never 0 or negative.
     ///
     /// Some mpv APIs (not necessarily all) accept a name in the form "@<id>" in
-    /// addition of the proper [`mpv_client_name()`], where "<id>" is the ID in decimal
+    /// addition of the proper [`Handle::name()`], where "<id>" is the ID in decimal
     /// form (e.g. "@123"). For example, the "script-message-to" command takes the
     /// client name as first argument, but also accepts the client ID formatted in
     /// this manner.
@@ -455,6 +502,45 @@ impl Handle {
         unsafe { result_with_code!(mpv_unobserve_property(self.as_ptr().cast_mut(), registered_reply)) }
     }
 
+    /// A hook is like a synchronous event that blocks the player. You register
+    /// a hook handler with this function. You will get an event, which you need
+    /// to handle, and once things are ready, you can let the player continue with
+    /// [`Handle::hook_continue()`].
+    ///
+    /// Currently, hooks can't be removed explicitly. But they will be implicitly
+    /// removed if the [`mpv_handle`] it was registered with is destroyed. This also
+    /// continues the hook if it was being handled by the destroyed [`mpv_handle`] (but
+    /// this should be avoided, as it might mess up order of hook execution).
+    ///
+    /// Hook handlers are ordered globally by priority and order of registration.
+    /// Handlers for the same hook with same priority are invoked in order of
+    /// registration (the handler registered first is run first). Handlers with
+    /// lower priority are run first (which seems backward).
+    ///
+    /// See the "Hooks" section in the manpage to see which hooks are currently
+    /// defined.
+    ///
+    /// Some hooks might be reentrant (so you get multiple [`mpv_event_id_MPV_EVENT_HOOK`] for the
+    /// same hook). If this can happen for a specific hook type, it will be
+    /// explicitly documented in the manpage.
+    ///
+    /// Only the `mpv_handle` on which this was called will receive the hook events,
+    /// or can "continue" them.
+    ///
+    /// # Arguments
+    ///
+    /// * `reply` - This will be used for the `mpv_event.reply_userdata`
+    ///   field for the received [`mpv_event_id_MPV_EVENT_HOOK`] events.
+    ///   If you have no use for this, pass 0.
+    /// * `name` - The hook name. This should be one of the documented names. But
+    ///   if the name is unknown, the hook event will simply be never
+    ///   raised.
+    /// * `priority` - See remarks above. Use 0 as a neutral default.
+    ///
+    /// # Returns
+    ///
+    /// * Error code (usually fails only on OOM).
+    ///
     /// # Errors
     /// Returns an mpv error if the hook cannot be added.
     pub fn hook_add<'a, S: Into<Cow<'a, str>>>(&self, reply: u64, name: S, priority: i32) -> Result<()> {
@@ -480,6 +566,7 @@ impl Handle {
         unimplemented!()
     }
 
+    /// Return the `MPV_CLIENT_API_VERSION` the mpv source has been compiled with.
     #[must_use]
     pub fn api_version() -> u64 {
         unsafe { u64::from(mpv_client_api_version()) }
@@ -514,7 +601,7 @@ impl Handle {
         unsafe { mpv_get_time_ns(self.as_ptr().cast_mut()) }
     }
 
-    /// Same as mpv_get_time_ns but in microseconds.
+    /// Same as [`Handle::get_time_ns`] but in microseconds.
     #[must_use]
     pub fn get_time_us(&self) -> i64 {
         unsafe { mpv_get_time_us(self.as_ptr().cast_mut()) }

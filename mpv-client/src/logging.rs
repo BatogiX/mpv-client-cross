@@ -2,8 +2,7 @@ use crate::{Handle, Node};
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::{
     fs::File,
-    io::{self, Read, Seek, SeekFrom, Write as _},
-    path::Path,
+    io::Write as _,
     sync::Mutex,
     time::{Duration, SystemTime},
 };
@@ -88,20 +87,9 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
 
     let log_file = path_log_file.map(|mut path_log_file| {
         let now = SystemTime::now();
-        let last_line = read_last_line(&path_log_file).expect("has log file");
 
-        let last_time = if last_line.is_empty() {
-            Duration::from_secs(0)
-        } else {
-            Duration::from_secs_f64(
-                last_line
-                    .get(1..=8)
-                    .unwrap_or("")
-                    .trim_start()
-                    .parse::<f64>()
-                    .unwrap_or(0.0),
-            )
-        };
+        let internal_now =
+            Duration::from_micros(u64::try_from(mp.get_time_us()).expect("mpv internal time is negative or invalid"));
 
         let suffix = format!("-{module}");
         match path_log_file.rfind('.') {
@@ -119,7 +107,7 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
         }
 
         let file = Mutex::new(File::create(&path_log_file).expect("failed to create log file"));
-        let start_time = now - last_time;
+        let start_time = now - internal_now;
         LogFile { file, start_time }
     });
 
@@ -127,21 +115,4 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
     log::set_boxed_logger(logger)?;
     log::set_max_level(log::LevelFilter::Info);
     Ok(())
-}
-
-fn read_last_line<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
-    let mut file = File::open(file_path)?;
-    let file_size = file.metadata()?.len();
-
-    if file_size == 0 {
-        return Ok(String::new());
-    }
-
-    let tail_size = usize::try_from(1024u64.min(file_size)).expect("fits in usize");
-    let mut buffer = vec![0; tail_size];
-    file.seek(SeekFrom::End(-(i64::try_from(tail_size).expect("fits in i64"))))?;
-    file.read_exact(&mut buffer)?;
-    let text = String::from_utf8_lossy(&buffer);
-    let last_line = text.lines().rfind(|s| !s.trim().is_empty()).unwrap_or("");
-    Ok(last_line.to_owned())
 }

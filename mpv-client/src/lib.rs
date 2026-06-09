@@ -573,8 +573,12 @@ impl Handle {
     }
 
     #[must_use]
-    pub fn error_string(error: i32) -> String {
-        unsafe { CStr::from_ptr(mpv_error_string(error)).to_string_lossy().into_owned() }
+    pub fn error_string(error: i32) -> &'static str {
+        unsafe {
+            CStr::from_ptr(mpv_error_string(error))
+                .to_str()
+                .unwrap_or("unknown error")
+        }
     }
 
     pub fn load_config_file<P: AsRef<Path>>(&self, filename: P) -> Result<()> {

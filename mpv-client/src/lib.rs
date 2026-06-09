@@ -1130,13 +1130,22 @@ impl EndFile<'_> {
         unsafe { EndFileReason::from((*self.0).reason) }
     }
 
-    #[must_use]
+    /// Check if the file playback ended due to an error.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the file finished playing normally (e.g., reached EOF,
+    /// stopped, or quit).
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the [`reason`](Self::reason) for ending the file
+    /// is [`EndFileReason::Error`].
     pub fn error(&self) -> Result<()> {
         let code = unsafe { (*self.0).error };
-        if self.reason() == EndFileReason::Error {
-            Err(Error::from(code))
-        } else {
-            Ok(())
+        match self.reason() {
+            EndFileReason::Error => Err(Error::from(code)),
+            _ => Ok(()),
         }
     }
 

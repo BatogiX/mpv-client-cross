@@ -16,17 +16,18 @@ pub use node::Node;
 use crate::{node::MpvNodeContentsGuard, options::CoercingString};
 
 use mpv_client_sys::{
-    mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret, mpv_create, mpv_create_client,
-    mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM, mpv_error_MPV_ERROR_SUCCESS, mpv_event,
-    mpv_event_client_message, mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
-    mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE,
-    mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK,
-    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
-    mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
-    mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
-    mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
-    mpv_event_start_file, mpv_get_property, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_node,
-    mpv_observe_property, mpv_set_property, mpv_unobserve_property, mpv_wait_event,
+    mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret,
+    mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM,
+    mpv_error_MPV_ERROR_SUCCESS, mpv_event, mpv_event_client_message, mpv_event_end_file, mpv_event_hook,
+    mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY,
+    mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY,
+    mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_NONE,
+    mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
+    mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
+    mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
+    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
+    mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_node, mpv_observe_property, mpv_set_property,
+    mpv_unobserve_property, mpv_wait_event,
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
@@ -37,7 +38,7 @@ use std::{
     marker::PhantomData,
     mem::MaybeUninit,
     ops::Deref,
-    path::PathBuf,
+    path::{Path, PathBuf},
     ptr,
 };
 
@@ -74,8 +75,7 @@ pub enum Event<'h> {
     /// (Unlike [`Event::GetPropertyReply`], [`Property`] is not used.)
     SetPropertyReply(Result<()>, u64),
     /// Reply to a [`Handle::command_async`] or [`mpv_client_sys::mpv_command_node_async()`] request.
-    /// See also [`Command`].
-    CommandReply(Result<()>, u64), // TODO mpv_event_command and mpv_node
+    CommandReply(Result<()>, u64),
     /// Notification before playback start of a file (before the file is loaded).
     /// See also [`StartFile`].
     StartFile(StartFile<'h>),
@@ -133,14 +133,12 @@ pub enum Event<'h> {
 pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::LogMessage`].
-#[allow(dead_code)]
 pub struct LogMessage<'h>(*const mpv_event_log_message, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::StartFile`].
 pub struct StartFile<'h>(*const mpv_event_start_file, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::EndFile`].
-#[allow(dead_code)]
 pub struct EndFile<'h>(*const mpv_event_end_file, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::ClientMessage`].
@@ -171,14 +169,14 @@ macro_rules! result_with_code {
 #[macro_export]
 macro_rules! osd {
     ($client:expr, $duration:expr, $($arg:tt)*) => {
-        $client.command(&["show-text", &format!($($arg)*), &$duration.as_millis().to_string()])
+        $client.command(["show-text", &format!($($arg)*), &$duration.as_millis().to_string()])
     }
 }
 
 #[macro_export]
 macro_rules! osd_async {
     ($client:expr, $reply:expr, $duration:expr, $($arg:tt)*) => {
-        $client.command_async($reply, &["show-text", &format!($($arg)*), &$duration.as_millis().to_string()])
+        $client.command_async($reply, ["show-text", &format!($($arg)*), &$duration.as_millis().to_string()])
     }
 }
 
@@ -208,11 +206,9 @@ impl Handle {
     #[must_use]
     pub unsafe fn from_ptr<'a>(ptr: *const mpv_handle) -> (&'a Self, EventQueueToken) {
         assert!(!ptr.is_null(), "mpv_handle pointer must not be null");
-        let id = unsafe { mpv_client_id(ptr.cast_mut()) };
-        (
-            unsafe { &*(ptr::slice_from_raw_parts(ptr, 1) as *const Self) },
-            EventQueueToken(id),
-        )
+        let handle = unsafe { &*(ptr::slice_from_raw_parts(ptr, 1) as *const Self) };
+        let id = handle.id();
+        (handle, EventQueueToken(id))
     }
 
     #[inline]
@@ -481,6 +477,71 @@ impl Handle {
     }
 
     pub fn set_property_async<'a, S: Into<Cow<'a, str>>, T: Format>(&self, reply: u64, name: S, data: T) -> Result<()> {
+        unimplemented!()
+    }
+
+    #[must_use]
+    pub fn api_version() -> u64 {
+        unsafe { u64::from(mpv_client_api_version()) }
+    }
+
+    pub fn error_string(&self, error: i32) -> Result<String> {
+        unimplemented!()
+    }
+
+    pub fn load_config_file<P: AsRef<Path>>(&self, filename: P) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Returns the internal time in nanoseconds.
+    ///
+    /// This has an arbitrary start offset, but will never wrap or go backwards.
+    ///
+    /// # Note
+    ///
+    /// This is always the *real time*, and doesn't necessarily have to do with playback time.
+    /// For example, playback could go faster or slower due to playback speed, or due to
+    /// playback being paused. Use the `"time-pos"` property instead to get the playback status.
+    ///
+    /// # Safety / Context
+    ///
+    /// Unlike other `libmpv` APIs, this can be called at absolutely any time (even
+    /// within wakeup callbacks), as long as the context is valid.
+    ///
+    /// **Thread Safety:** Safe to be called from mpv render API threads.
+    #[must_use]
+    pub fn get_time_ns(&self) -> i64 {
+        unsafe { mpv_get_time_ns(self.as_ptr().cast_mut()) }
+    }
+
+    /// Same as mpv_get_time_ns but in microseconds.
+    #[must_use]
+    pub fn get_time_us(&self) -> i64 {
+        unsafe { mpv_get_time_us(self.as_ptr().cast_mut()) }
+    }
+
+    pub fn abort_async_command(&self, reply: u64) {
+        unimplemented!()
+    }
+
+    #[must_use]
+    pub fn event_name(&self, event: u32) -> Option<String> {
+        unimplemented!()
+    }
+
+    pub fn request_event(&self, event: u32, enable: i32) -> Result<()> {
+        unimplemented!()
+    }
+
+    pub fn wakeup(&self) {
+        unimplemented!()
+    }
+
+    pub fn set_wakeup_callback(&self) {
+        unimplemented!()
+    }
+
+    pub fn wait_async_requests(&self) {
         unimplemented!()
     }
 

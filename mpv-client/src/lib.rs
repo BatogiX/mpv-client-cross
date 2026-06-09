@@ -31,16 +31,15 @@ use mpv_client_sys::{
 };
 use serde::de::{self, DeserializeOwned};
 use std::{
-    borrow::Cow,
     collections::HashMap,
-    convert::{self, Into},
+    convert::Into,
     ffi::{CStr, CString, c_char, c_void},
     fmt, fs, iter,
     marker::PhantomData,
     mem::MaybeUninit,
     ops::Deref,
     path::{Path, PathBuf},
-    ptr,
+    ptr, result,
 };
 
 #[cfg(feature = "macros")]
@@ -391,14 +390,14 @@ impl Handle {
     ///
     /// # Panics
     /// Panics if any argument contains a null byte.
-    pub fn command_ret<'a, I, S>(&self, args: I) -> Result<Node>
+    pub fn command_ret<I, S>(&self, args: I) -> Result<Node>
     where
         I: IntoIterator<Item = S>,
         S: Into<Vec<u8>>,
     {
         let args: Vec<CString> = args
             .into_iter()
-            .map(|s| CString::new(s.into().into_owned()).expect("input contains null byte"))
+            .map(|s| CString::new(s.into()).expect("input contains null byte"))
             .collect();
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
@@ -467,7 +466,7 @@ impl Handle {
     /// # Errors
     /// Returns an mpv error if the property cannot be read, or if the format
     /// doesn't match the internal format.
-    pub fn get_property<T: Format>(&self, name: impl AsRef<Vec<u8>>) -> Result<T> {
+    pub fn get_property<T: Format>(&self, name: impl Into<Vec<u8>>) -> Result<T> {
         let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
@@ -549,15 +548,15 @@ impl Handle {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
 
-    pub fn request_log_messages<S: Into<Vec<u8>>>(&self, min_level: S) -> Result<()> {
+    pub fn request_log_messages(&self, min_level: impl Into<Vec<u8>>) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn get_property_async<S: Into<Vec<u8>>>(&self, reply: u64, name: S) -> Result<()> {
+    pub fn get_property_async(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn set_property_async<S: Into<Vec<u8>>, T: Format>(&self, reply: u64, name: S, data: T) -> Result<()> {
+    pub fn set_property_async<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         unimplemented!()
     }
 
@@ -779,7 +778,7 @@ impl Handle {
         }
 
         let Node::Map(script_opts) = self
-            .get_property::<Node>("script-opts")
+            .get_property("script-opts")
             .expect("'script-opts' property unavailable")
         else {
             unreachable!("'script-opts' always return a Map variant")
@@ -805,7 +804,7 @@ impl Handle {
 
     /// # Errors
     /// Returns [`log::SetLoggerError`] if a logger is already set.
-    pub fn initialize_logging(&self) -> std::result::Result<(), log::SetLoggerError> {
+    pub fn initialize_logging(&self) -> result::Result<(), log::SetLoggerError> {
         logging::init(self)
     }
 

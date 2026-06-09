@@ -1,9 +1,7 @@
-use mpv_client_sys::{mpv_error, mpv_error_MPV_ERROR_GENERIC, mpv_error_string};
-use std::{
-    ffi::{CStr, NulError},
-    fmt,
-    str::Utf8Error,
-};
+use mpv_client_sys::{mpv_error, mpv_error_MPV_ERROR_GENERIC};
+use std::{ffi::NulError, fmt, str::Utf8Error};
+
+use crate::Handle;
 
 #[derive(Debug)]
 pub struct Error(mpv_error);
@@ -30,11 +28,7 @@ impl From<Utf8Error> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let err = unsafe {
-            CStr::from_ptr(mpv_error_string(self.0))
-                .to_str()
-                .unwrap_or("unknown error")
-        };
+        let err = Handle::error_string(self.0);
         write!(f, "[{}] {}", self.0, err)
     }
 }

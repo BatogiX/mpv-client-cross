@@ -18,11 +18,11 @@ use crate::{node::MpvNodeContentsGuard, options::CoercingString};
 use mpv_client_sys::{
     mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async, mpv_command_ret,
     mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_MPV_ERROR_NOMEM,
-    mpv_error_MPV_ERROR_SUCCESS, mpv_event, mpv_event_client_message, mpv_event_end_file, mpv_event_hook,
-    mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY,
-    mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY,
-    mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_NONE,
-    mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
+    mpv_error_MPV_ERROR_SUCCESS, mpv_error_string, mpv_event, mpv_event_client_message, mpv_event_end_file,
+    mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
+    mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED,
+    mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE,
+    mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
     mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
     mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
     mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_get_property, mpv_get_time_ns,
@@ -572,8 +572,9 @@ impl Handle {
         unsafe { u64::from(mpv_client_api_version()) }
     }
 
-    pub fn error_string(&self, error: i32) -> Result<String> {
-        unimplemented!()
+    #[must_use]
+    pub fn error_string(error: i32) -> String {
+        unsafe { CStr::from_ptr(mpv_error_string(error)).to_string_lossy().into_owned() }
     }
 
     pub fn load_config_file<P: AsRef<Path>>(&self, filename: P) -> Result<()> {

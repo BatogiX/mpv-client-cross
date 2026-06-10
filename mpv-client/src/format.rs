@@ -22,7 +22,7 @@ pub trait Format: Sized + Default {
 }
 
 impl Format for String {
-    const MPV_FORMAT: u32 = 1;
+    const MPV_FORMAT: u32 = FormatType::String as u32;
 
     /// # Errors
     /// Returns an error if the C string is not valid UTF-8.
@@ -60,7 +60,7 @@ impl Format for String {
 }
 
 impl Format for bool {
-    const MPV_FORMAT: u32 = 3;
+    const MPV_FORMAT: u32 = FormatType::Flag as u32;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         Ok(unsafe { *ptr.cast::<c_int>() != 0 })
@@ -78,7 +78,7 @@ impl Format for bool {
 }
 
 impl Format for i64 {
-    const MPV_FORMAT: u32 = 4;
+    const MPV_FORMAT: u32 = FormatType::Int64 as u32;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         Ok(unsafe { *ptr.cast::<Self>() })
@@ -96,7 +96,7 @@ impl Format for i64 {
 }
 
 impl Format for f64 {
-    const MPV_FORMAT: u32 = 5;
+    const MPV_FORMAT: u32 = FormatType::Double as u32;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         Ok(unsafe { *ptr.cast::<Self>() })
@@ -114,7 +114,7 @@ impl Format for f64 {
 }
 
 impl Format for Node {
-    const MPV_FORMAT: u32 = 6;
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         if ptr.is_null() {
@@ -149,4 +149,18 @@ impl Drop for MpvFreeGuard {
     fn drop(&mut self) {
         Handle::free(self.0.cast::<c_void>());
     }
+}
+
+#[repr(u32)]
+enum FormatType {
+    None,
+    String,
+    OsdString,
+    Flag,
+    Int64,
+    Double,
+    Node,
+    NodeArray,
+    NodeMap,
+    ByteArray,
 }

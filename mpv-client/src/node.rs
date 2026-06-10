@@ -221,16 +221,17 @@ impl From<&Node> for *mut mpv_node {
 }
 
 pub struct MpvNodeGuard(*mut mpv_node);
-impl From<&Node> for MpvNodeGuard {
-    fn from(node: &Node) -> Self {
-        Self(<*mut mpv_node>::from(node))
-    }
-}
 
 impl MpvNodeGuard {
     #[must_use]
     pub const fn as_ptr(&self) -> *mut mpv_node {
         self.0
+    }
+}
+
+impl From<&Node> for MpvNodeGuard {
+    fn from(node: &Node) -> Self {
+        Self(<*mut mpv_node>::from(node))
     }
 }
 
@@ -247,6 +248,7 @@ impl Drop for MpvNodeGuard {
 }
 
 pub struct MpvNodeContentsGuard(pub *mut mpv_node);
+
 impl Drop for MpvNodeContentsGuard {
     fn drop(&mut self) {
         Handle::free_node_contents(self.0);

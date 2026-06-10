@@ -150,7 +150,7 @@ pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
 macro_rules! result {
     ($f:expr) => {{
         let code = $f;
-        if code == mpv_client_sys::mpv_error_MPV_ERROR_SUCCESS {
+        if code >= mpv_client_sys::mpv_error_MPV_ERROR_SUCCESS {
             Ok(())
         } else {
             Err(crate::error::Error::from(code))

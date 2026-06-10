@@ -904,6 +904,10 @@ impl Handle {
     const fn as_ptr(&self) -> *const mpv_handle {
         self.inner.as_ptr()
     }
+
+    fn destroy(ctx: *mut mpv_handle) {
+        unsafe { mpv_destroy(ctx) }
+    }
 }
 
 /// SAFETY: libmpv guarantees that the same `mpv_handle` is safe to be called from multiple
@@ -930,7 +934,7 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        unsafe { mpv_destroy(self.0) }
+        Handle::destroy(self.0);
     }
 }
 
@@ -953,7 +957,7 @@ pub struct UninitializedClient(*mut mpv_handle);
 
 impl Drop for UninitializedClient {
     fn drop(&mut self) {
-        unsafe { mpv_destroy(self.0) }
+        Handle::destroy(self.0);
     }
 }
 

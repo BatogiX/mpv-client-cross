@@ -785,7 +785,7 @@ impl Handle {
     /// Some events are enabled by default. Some events can't be disabled.
     ///
     /// *(Informational note: currently, all events are enabled by default, except
-    /// [`mpv_client_sys::mpv_event_id_MPV_EVENT_TICK`].)*
+    /// [`MPV_EVENT_TICK`](mpv_client_sys::mpv_event_id_MPV_EVENT_TICK).)*
     ///
     /// # Thread Safety
     ///
@@ -793,7 +793,7 @@ impl Handle {
     ///
     /// # Arguments
     ///
-    /// * `event` - The event to enable or disable. See [`mpv_client_sys::mpv_event_id`].
+    /// * `event` - The event to enable or disable. See [`mpv_event_id`](mpv_client_sys::mpv_event_id).
     /// * `enable` - `1` to enable receiving this event, `0` to disable it.
     ///
     /// # Returns
@@ -814,7 +814,7 @@ impl Handle {
     /// thread is waiting, the next [`Handle::wait_event()`] call will return immediately
     /// (this is to avoid lost wakeups).
     ///
-    /// [`Handle::wait_event()`] will receive a [`mpv_event_id_MPV_EVENT_NONE`] if it is woken up due to
+    /// [`Handle::wait_event()`] will receive a [`MPV_EVENT_NONE`](mpv_event_id_MPV_EVENT_NONE) if it is woken up due to
     /// this call. However, note that this dummy event might be skipped if there are
     /// already other events queued. All that matters is that the waiting thread
     /// is woken up at all.

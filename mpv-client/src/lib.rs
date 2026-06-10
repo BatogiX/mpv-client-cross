@@ -130,6 +130,7 @@ pub enum Event<'h> {
 }
 
 /// Data associated with [`Event::GetPropertyReply`] and [`Event::PropertyChange`].
+#[derive(Debug)]
 pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::LogMessage`].
@@ -717,7 +718,7 @@ impl Handle {
     /// Signals to all async requests with the matching ID to abort.
     ///
     /// This affects the following API calls:
-    /// * [`Handle::command_async()`]
+    /// * [`command_async()`](Handle::command_async())
     /// * [`mpv_command_node_async()`]
     ///
     /// All of these functions take a `reply` parameter. This function
@@ -1097,20 +1098,30 @@ impl Event<'_> {
 
 impl fmt::Display for Event<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Event::LogMessage(ref msg) => write!(f, "{msg}"),
-            _ => Ok(()),
+        let event_name = Handle::event_name(u32::from(self)).unwrap_or("unknown");
+        match self {
+            Event::None => Ok(()),
+            Event::LogMessage(msg) => write!(f, "{event_name}: {msg}"),
+            Event::GetPropertyReply(.., property) => {
+                if let Some(property) = property {
+                    write!(f, "{event_name}: {property}")
+                } else {
+                    write!(f, "{event_name}: {property:?}")
+                }
+            }
+            // Event::SetPropertyReply(_, _) => todo!(),
+            // Event::CommandReply(_, _) => todo!(),
+            // Event::StartFile(start_file) => todo!(),
+            // Event::EndFile(end_file) => todo!(),
+            // Event::ClientMessage(client_message) => todo!(),
+            Event::PropertyChange(_, property) => write!(f, "{event_name}: {property}"),
+            // Event::Hook(_, hook) => todo!(),
+            _ => f.write_str(event_name),
         }
-
-        // f.write_str(unsafe {
-        //     CStr::from_ptr(mpv_event_name(event))
-        //         .to_str()
-        //         .unwrap_or("unknown event")
-        // })
     }
 }
 
-impl<'h> Property<'h> {
+impl Property<'_> {
     /// Wrap a raw [`mpv_event_property`]
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
@@ -1120,14 +1131,19 @@ impl<'h> Property<'h> {
 
     /// Name of the property.
     #[must_use]
-    pub fn name(&self) -> &'h str {
+    pub fn name(&self) -> &str {
         unsafe { CStr::from_ptr((*self.0).name) }.to_str().unwrap_or("unknown")
+    }
+
+    #[must_use]
+    pub const fn format(&self) -> u32 {
+        unsafe { (*self.0).format }
     }
 
     #[must_use]
     pub fn data<T: Format>(&self) -> Option<T> {
         unsafe {
-            if (*self.0).format == T::MPV_FORMAT {
+            if self.format() == T::MPV_FORMAT {
                 T::from_ptr((*self.0).data).ok()
             } else {
                 None
@@ -1138,7 +1154,21 @@ impl<'h> Property<'h> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(self.name())
+        let data = self
+            .data::<String>()
+            .or_else(|| self.data::<i64>().map(|v| v.to_string()))
+            .or_else(|| self.data::<f64>().map(|v| v.to_string()))
+            .or_else(|| self.data::<bool>().map(|v| v.to_string()))
+            .or_else(|| self.data::<Node>().map(|v| v.to_string()))
+            .unwrap_or_else(|| "None".to_owned());
+
+        write!(
+            f,
+            "Property {{\n    name: {}\n    format: {}\n    data: {}\n}}",
+            self.name(),
+            self.format(),
+            data
+        )
     }
 }
 
@@ -1368,6 +1398,30 @@ impl From<u32> for EndFileReason {
             4 => Self::Error,
             5 => Self::Redirect,
             value => Self::Unknown(value),
+        }
+    }
+}
+
+impl From<&Event<'_>> for u32 {
+    fn from(value: &Event) -> Self {
+        match value {
+            Event::None => 0,
+            Event::Shutdown => 1,
+            Event::LogMessage(..) => 2,
+            Event::GetPropertyReply(..) => 3,
+            Event::SetPropertyReply(..) => 4,
+            Event::CommandReply(..) => 5,
+            Event::StartFile(..) => 6,
+            Event::EndFile(..) => 7,
+            Event::FileLoaded => 8,
+            Event::ClientMessage(..) => 16,
+            Event::VideoReconfig => 17,
+            Event::AudioReconfig => 18,
+            Event::Seek => 20,
+            Event::PlaybackRestart => 21,
+            Event::PropertyChange(..) => 22,
+            Event::QueueOverflow => 24,
+            Event::Hook(..) => 25,
         }
     }
 }

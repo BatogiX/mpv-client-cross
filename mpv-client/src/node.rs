@@ -6,6 +6,7 @@ use mpv_client_sys::{
 use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_void},
+    fmt::Display,
     ptr, slice,
 };
 
@@ -22,6 +23,21 @@ pub enum Node {
     ByteArray(Vec<u8>),
     Array(Vec<Self>),
     Map(HashMap<String, Self>),
+}
+
+impl Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::String(v) => write!(f, "{v}"),
+            Self::Int(v) => write!(f, "{v}"),
+            Self::Double(v) => write!(f, "{v}"),
+            Self::Bool(v) => write!(f, "{v}"),
+            Self::ByteArray(items) => write!(f, "{items:#?}"),
+            Self::Array(nodes) => write!(f, "{nodes:#?}"),
+            Self::Map(hash_map) => write!(f, "{hash_map:#?}"),
+        }
+    }
 }
 
 impl From<&mpv_node> for Node {

@@ -1,8 +1,8 @@
 use crate::{
-    Result,
+    Handle, Result,
     node::{MpvNodeGuard, Node},
 };
-use mpv_client_sys::{mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_node, mpv_node__bindgen_ty_1};
+use mpv_client_sys::{mpv_format_MPV_FORMAT_NONE, mpv_node, mpv_node__bindgen_ty_1};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 
 pub trait Format: Sized + Default {
@@ -147,13 +147,13 @@ impl Format for Node {
 struct MpvFreeGuard(*mut c_char);
 impl Drop for MpvFreeGuard {
     fn drop(&mut self) {
-        unsafe { mpv_free(self.0.cast::<c_void>()) };
+        Handle::free(self.0.cast::<c_void>());
     }
 }
 
 struct MpvNodeContentsGuard(*mut mpv_node);
 impl Drop for MpvNodeContentsGuard {
     fn drop(&mut self) {
-        unsafe { mpv_free_node_contents(self.0) };
+        Handle::free_node_contents(self.0);
     }
 }

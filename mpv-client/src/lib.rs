@@ -22,10 +22,10 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
     mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
     mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
-    mpv_event_start_file, mpv_get_property, mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add,
-    mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event,
-    mpv_request_log_messages, mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_event,
-    mpv_wakeup,
+    mpv_event_start_file, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_get_property,
+    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
+    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
+    mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
 };
 pub use node::Node;
 use serde::de::{self, DeserializeOwned};
@@ -905,8 +905,80 @@ impl Handle {
         self.inner.as_ptr()
     }
 
+    /// Disconnect and destroy the [`mpv_handle`]. The `ctx` pointer will be deallocated
+    /// with this API call.
+    ///
+    /// If the last [`mpv_handle`] is detached, the core player is destroyed. In
+    /// addition, if there are only weak `mpv_handles` (such as created by
+    /// [`create_weak_client()`](Handle::create_weak_client) or internal scripts), these `mpv_handles` will
+    /// be sent [`MPV_EVENT_SHUTDOWN`](mpv_event_id_MPV_EVENT_SHUTDOWN).
+    ///
+    /// This function may block until these clients have responded to the shutdown
+    /// event, and the core is finally destroyed.
+    ///
+    /// # Safety
+    ///
+    /// * `ctx` must be a valid, non-null pointer to an initialized [`mpv_handle`].
+    /// * After this function returns, `ctx` becomes a **dangling pointer**. Any further
+    ///   use of this pointer (including passing it to other `mpv_` functions) is a
+    ///   use-after-free violation and results in **undefined behavior**.
+    ///
+    /// # Blocking
+    ///
+    /// This call can **block** the current thread while waiting for weak clients and
+    /// internal scripts to process the shutdown event and terminate properly. Avoid
+    /// calling this on a thread that cannot afford to block (e.g., a UI thread or an
+    /// audio callback thread).
     fn destroy(ctx: *mut mpv_handle) {
-        unsafe { mpv_destroy(ctx) }
+        if !ctx.is_null() {
+            unsafe { mpv_destroy(ctx) }
+        }
+    }
+
+    /// General function to deallocate memory returned by some of the API functions.
+    ///
+    /// Call this only if it's explicitly documented as allowed. Calling this on
+    /// `mpv` memory not owned by the caller will lead to undefined behavior.
+    ///
+    /// # Safety
+    ///
+    /// * The `data` parameter must be a valid pointer returned by the API,
+    ///   or a null pointer (e.g., [`std::ptr::null()`](core::ptr::null) / [`std::ptr::null_mut()`](core::ptr::null_mut)).
+    /// * Passing a pointer to memory not owned by the caller, or a pointer that
+    ///   has already been deallocated (double-free), results in **undefined behavior**.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - A pointer to the memory block to be deallocated.
+    fn free(data: *mut c_void) {
+        unsafe { mpv_free(data) }
+    }
+
+    /// Frees any data referenced by the node. It doesn't free the node itself.
+    ///
+    /// Call this only if the `mpv` client API set the node. If you constructed the
+    /// node yourself (manually), you have to free it yourself.
+    ///
+    /// If [`mpv_node::format`] is [`mpv_format_MPV_FORMAT_NONE`], this call does nothing. Likewise, if
+    /// the client API sets a node with this format, this function doesn't need to
+    /// be called. (This is just a clarification that there's no danger of anything
+    /// strange happening in these cases.)
+    ///
+    /// # Safety
+    ///
+    /// * The `node` must point to a valid, initialized structure that was populated
+    ///   by the `mpv` client API.
+    /// * Calling this function on a node you manually allocated or constructed yourself
+    ///   will result in **undefined behavior**. You must free manual allocations using
+    ///   your own allocation wrappers.
+    /// * Ensure that the referenced data is not used after this function is called,
+    ///   as the pointers inside the node will become dangling.
+    fn free_node_contents(node: *mut mpv_node) {
+        unsafe {
+            if !node.is_null() && (*node).format != mpv_format_MPV_FORMAT_NONE {
+                mpv_free_node_contents(node);
+            }
+        }
     }
 }
 

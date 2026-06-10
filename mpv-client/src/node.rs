@@ -144,7 +144,7 @@ impl From<&Node> for *mut mpv_node {
             }
             Node::Array(arr) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
-
+                let num: i32 = arr.len().try_into().expect("len fits in i32");
                 let mut guard = MapBuilderGuard {
                     values: Vec::with_capacity(arr.len()),
                     keys: Vec::with_capacity(0),
@@ -157,24 +157,19 @@ impl From<&Node> for *mut mpv_node {
 
                 let values = std::mem::take(&mut guard.values);
                 std::mem::forget(guard);
-
-                let values_ptr = if values.is_empty() {
+                let values = if values.is_empty() {
                     ptr::null_mut()
                 } else {
                     Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>()
                 };
 
-                let list = Box::new(mpv_node_list {
-                    num: arr.len().try_into().expect("len fits in i32"),
-                    values: values_ptr,
-                    keys: std::ptr::null_mut(),
-                });
-
+                let keys = ptr::null_mut();
+                let list = Box::new(mpv_node_list { num, values, keys });
                 mpv_node.u.list = Box::into_raw(list);
             }
             Node::Map(map) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_MAP;
-
+                let num = map.len().try_into().expect("len fits in i32");
                 let mut guard = MapBuilderGuard {
                     values: Vec::with_capacity(map.len()),
                     keys: Vec::with_capacity(map.len()),
@@ -191,31 +186,26 @@ impl From<&Node> for *mut mpv_node {
                 let keys = std::mem::take(&mut guard.keys);
                 std::mem::forget(guard);
 
-                let values_ptr = if values.is_empty() {
+                let values = if values.is_empty() {
                     ptr::null_mut()
                 } else {
                     Box::into_raw(values.into_boxed_slice()).cast::<mpv_node>()
                 };
 
-                let keys_ptr = if keys.is_empty() {
+                let keys = if keys.is_empty() {
                     ptr::null_mut()
                 } else {
                     Box::into_raw(keys.into_boxed_slice()).cast::<*mut c_char>()
                 };
 
-                let list = Box::new(mpv_node_list {
-                    num: map.len().try_into().expect("len fits in i32"),
-                    values: values_ptr,
-                    keys: keys_ptr,
-                });
-
+                let list = Box::new(mpv_node_list { num, values, keys });
                 mpv_node.u.list = Box::into_raw(list);
             }
             Node::ByteArray(vec) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_BYTE_ARRAY;
 
                 let data = if vec.is_empty() {
-                    std::ptr::null_mut()
+                    ptr::null_mut()
                 } else {
                     let boxed_slice = vec.clone().into_boxed_slice();
                     Box::into_raw(boxed_slice).cast::<c_void>()

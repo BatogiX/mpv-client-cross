@@ -2,10 +2,19 @@ use crate::{
     Handle, Result,
     node::{MpvNodeContentsGuard, MpvNodeGuard, Node},
 };
-use mpv_client_sys::{mpv_format_MPV_FORMAT_NONE, mpv_node, mpv_node__bindgen_ty_1};
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use mpv_client_sys::{
+    mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
+    mpv_format_MPV_FORMAT_INT64, mpv_format_MPV_FORMAT_NODE, mpv_format_MPV_FORMAT_NODE_ARRAY,
+    mpv_format_MPV_FORMAT_NODE_MAP, mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_OSD_STRING,
+    mpv_format_MPV_FORMAT_STRING, mpv_node, mpv_node__bindgen_ty_1,
+};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString, c_char, c_int, c_void},
+};
 
-pub trait Format: Sized + Default {
+#[allow(private_bounds)]
+pub trait Format: Sized + Default + Sealed {
     const MPV_FORMAT: u32;
 
     /// # Errors
@@ -59,8 +68,28 @@ impl Format for String {
     }
 }
 
+impl Format for OsdString {
+    const MPV_FORMAT: u32 = FormatType::OsdString as u32;
+
+    /// # Errors
+    /// Returns an error if the C string is not valid UTF-8.
+    fn from_ptr(ptr: *const c_void) -> Result<Self> {
+        Ok(Self(String::from_ptr(ptr)?))
+    }
+
+    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+        self.0.to_mpv(fun)
+    }
+
+    /// # Errors
+    /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
+    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+        Ok(Self(String::from_mpv(fun)?))
+    }
+}
+
 impl Format for bool {
-    const MPV_FORMAT: u32 = FormatType::Flag as u32;
+    const MPV_FORMAT: u32 = FormatType::Bool as u32;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         Ok(unsafe { *ptr.cast::<c_int>() != 0 })
@@ -78,7 +107,7 @@ impl Format for bool {
 }
 
 impl Format for i64 {
-    const MPV_FORMAT: u32 = FormatType::Int64 as u32;
+    const MPV_FORMAT: u32 = FormatType::Int as u32;
 
     fn from_ptr(ptr: *const c_void) -> Result<Self> {
         Ok(unsafe { *ptr.cast::<Self>() })
@@ -133,7 +162,7 @@ impl Format for Node {
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut node = mpv_node {
-            format: mpv_format_MPV_FORMAT_NONE,
+            format: FormatType::None as u32,
             u: mpv_node__bindgen_ty_1 { int64: 0 },
         };
 
@@ -144,6 +173,17 @@ impl Format for Node {
     }
 }
 
+trait Sealed {}
+impl Sealed for String {}
+impl Sealed for OsdString {}
+impl Sealed for bool {}
+impl Sealed for i64 {}
+impl Sealed for f64 {}
+impl Sealed for Node {}
+impl Sealed for Vec<Node> {}
+impl Sealed for HashMap<String, Node> {}
+impl Sealed for Vec<u8> {}
+
 struct MpvFreeGuard(*mut c_char);
 impl Drop for MpvFreeGuard {
     fn drop(&mut self) {
@@ -153,14 +193,17 @@ impl Drop for MpvFreeGuard {
 
 #[repr(u32)]
 enum FormatType {
-    None,
-    String,
-    OsdString,
-    Flag,
-    Int64,
-    Double,
-    Node,
-    NodeArray,
-    NodeMap,
-    ByteArray,
+    None = mpv_format_MPV_FORMAT_NONE,
+    String = mpv_format_MPV_FORMAT_STRING,
+    OsdString = mpv_format_MPV_FORMAT_OSD_STRING,
+    Bool = mpv_format_MPV_FORMAT_FLAG,
+    Int = mpv_format_MPV_FORMAT_INT64,
+    Double = mpv_format_MPV_FORMAT_DOUBLE,
+    Node = mpv_format_MPV_FORMAT_NODE,
+    NodeArray = mpv_format_MPV_FORMAT_NODE_ARRAY,
+    NodeMap = mpv_format_MPV_FORMAT_NODE_MAP,
+    ByteArray = mpv_format_MPV_FORMAT_BYTE_ARRAY,
 }
+
+#[derive(Debug, Default)]
+pub struct OsdString(pub String);

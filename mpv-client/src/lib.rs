@@ -18,7 +18,7 @@ use mpv_client_sys::{
     mpv_event_client_message, mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
     mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE,
     mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK,
-    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_NONE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
+    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
     mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
     mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
     mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
@@ -1154,20 +1154,29 @@ impl Property<'_> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let data = self
-            .data::<String>()
-            .or_else(|| self.data::<i64>().map(|v| v.to_string()))
-            .or_else(|| self.data::<f64>().map(|v| v.to_string()))
-            .or_else(|| self.data::<bool>().map(|v| v.to_string()))
-            .or_else(|| self.data::<Node>().map(|v| v.to_string()))
+        let format_type = FormatType::try_from(self.format()).ok();
+        let format = format_type.map_or_else(|| format!("Unknown ({})", self.format()), |fmt| format!("{fmt}"));
+        let data = format_type
+            .map_or_else(
+                || Some("None".to_owned()),
+                |v| match v {
+                    FormatType::None => Some("None".to_owned()),
+                    FormatType::String => self.data::<String>().map(|s| format!("\"{s}\"")),
+                    FormatType::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),
+                    FormatType::Bool => self.data::<bool>().map(|v| v.to_string()),
+                    FormatType::Int => self.data::<i64>().map(|v| v.to_string()),
+                    FormatType::Double => self.data::<f64>().map(|v| v.to_string()),
+                    FormatType::Node => self.data::<Node>().map(|v| v.to_string()),
+                    FormatType::NodeArray => todo!(),
+                    FormatType::NodeMap => todo!(),
+                    FormatType::ByteArray => todo!(),
+                },
+            )
             .unwrap_or_else(|| "None".to_owned());
-
-        let format = FormatType::try_from(self.format())
-            .map_or_else(|_| format!("Unknown ({})", self.format()), |fmt| format!("{fmt}"));
 
         write!(
             f,
-            "Property {{\n    name: {}\n    format: {}\n    data: {}\n}}",
+            "Property {{\n    name: \"{}\"\n    format: {}\n    data: {}\n}}",
             self.name(),
             format,
             data

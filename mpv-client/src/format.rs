@@ -212,6 +212,7 @@ impl Drop for MpvFreeGuard {
 }
 
 #[repr(u32)]
+#[derive(Debug, Clone, Copy)]
 pub enum FormatType {
     None = mpv_format_MPV_FORMAT_NONE,
     String = mpv_format_MPV_FORMAT_STRING,

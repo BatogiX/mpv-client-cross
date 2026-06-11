@@ -1,6 +1,6 @@
 use crate::{
     Handle, Result,
-    node::{BorrowedMpvNode, ClonedMpvNode, MpvNode as _, Node, OwnedMpvNode},
+    node::{BorrowedMpvNode, ClonedMpvNode, MpvNode as _, Node, RawMpvNode},
 };
 use mpv_client_sys::{
     mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
@@ -177,7 +177,7 @@ impl Format for Node {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mut mpv_node = OwnedMpvNode::new(self);
+        let mut mpv_node = RawMpvNode::new(self);
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 

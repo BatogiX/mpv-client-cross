@@ -255,20 +255,16 @@ pub struct MpvNodeListGuard {
 
 impl MpvNodeListGuard {
     pub fn as_mut_ptr(&mut self) -> *mut mpv_node {
-        let mpv_node_list = Box::new(mpv_node_list {
+        let mpv_node_list = Box::into_raw(Box::new(mpv_node_list {
             num: self.values.len() as i32,
             values: self.values.as_mut_ptr(),
             keys: self.keys.as_mut_ptr(),
-        });
+        }));
 
-        let mpv_node_list = Box::into_raw(mpv_node_list);
-
-        let mpv_node = Box::new(mpv_node {
+        Box::into_raw(Box::new(mpv_node {
             format: mpv_format_MPV_FORMAT_NODE_ARRAY,
             u: mpv_node__bindgen_ty_1 { list: mpv_node_list },
-        });
-
-        Box::into_raw(mpv_node)
+        }))
     }
 }
 
@@ -388,5 +384,32 @@ fn drop_mpv_node_contents(node: &mut mpv_node) {
             }
             _ => {}
         }
+    }
+}
+
+/// Cleaned by libmpv.
+/// Created by libmpv.
+#[repr(transparent)]
+struct BorrowedMpvNode<'a>(&'a mpv_node);
+
+/// Must be cleaned on drop via [`free_node_contents()`](Handle::free_node_contents()).
+/// Created by libmpv.
+#[repr(transparent)]
+struct ClonedMpvNode(mpv_node);
+
+impl Drop for ClonedMpvNode {
+    fn drop(&mut self) {
+        Handle::free_node_contents(&raw mut self.0);
+    }
+}
+
+/// Must be cleaned on drop manually.
+/// Created manually
+#[repr(transparent)]
+struct OwnedMpvNode(mpv_node);
+
+impl Drop for OwnedMpvNode {
+    fn drop(&mut self) {
+        todo!()
     }
 }

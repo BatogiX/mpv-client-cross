@@ -401,16 +401,14 @@ impl Handle {
             .map(|s| CString::new(s.into()))
             .collect::<result::Result<Vec<CString>, NulError>>()?;
 
-        let mut args: Vec<*const c_char> = c_args
+        let mut c_args_raw: Vec<*const c_char> = c_args
             .iter()
             .map(|s| s.as_ptr())
             .chain(iter::once(ptr::null()))
             .collect();
 
-        let mut mpv_node = ClonedMpvNode::default();
-        result!(unsafe { mpv_command_ret(self.as_mut_ptr(), args.as_mut_ptr(), mpv_node.as_mut_ptr()) })?;
-        let node = Node::from(mpv_node);
-        Ok(node)
+        let args = c_args_raw.as_mut_ptr();
+        Node::from_mpv(|result| result!(unsafe { mpv_command_ret(self.as_mut_ptr(), args, result.cast()) }))
     }
 
     /// Same as [`Handle::command`], but run the command asynchronously.

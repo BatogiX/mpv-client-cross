@@ -183,7 +183,7 @@ impl Format for Node {
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
-        fun(mpv_node.as_mut_ptr().cast::<c_void>())?;
+        fun(mpv_node.as_mut_ptr().cast())?;
         Ok(Self::from(mpv_node))
     }
 }

@@ -7,7 +7,7 @@ use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_void},
     fmt::Display,
-    ptr, slice,
+    mem, ptr, slice,
 };
 
 use crate::Handle;
@@ -128,10 +128,10 @@ impl From<&mpv_node> for Node {
     }
 }
 
-impl From<&Node> for *mut mpv_node {
+impl From<Node> for *mut mpv_node {
     /// # Panics
     /// If a node string contains a null byte or a length overflows [`i32`].
-    fn from(node: &Node) -> Self {
+    fn from(node: Node) -> Self {
         let mut mpv_node = Box::new(mpv_node {
             format: 0,
             u: mpv_node__bindgen_ty_1 { int64: 0 },
@@ -143,36 +143,27 @@ impl From<&Node> for *mut mpv_node {
             }
             Node::String(s) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_STRING;
-                let cstr = CString::new(s.as_str()).expect("CString::new failed");
+                let cstr = CString::new(s).expect("CString::new failed");
                 mpv_node.u.string = cstr.into_raw();
             }
             Node::Int(i) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_INT64;
-                mpv_node.u.int64 = *i;
+                mpv_node.u.int64 = i;
             }
             Node::Double(f) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_DOUBLE;
-                mpv_node.u.double_ = *f;
+                mpv_node.u.double_ = f;
             }
             Node::Bool(b) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_FLAG;
-                mpv_node.u.flag = i32::from(*b);
+                mpv_node.u.flag = i32::from(b);
             }
-            Node::Array(arr) => {
+            Node::Array(node_array) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
-                let num: i32 = arr.len().try_into().expect("len fits in i32");
-                let mut guard = MapBuilderGuard {
-                    values: Vec::with_capacity(arr.len()),
-                    keys: Vec::with_capacity(0),
-                };
-
-                for v in arr {
-                    let node = unsafe { *Box::from_raw(Self::from(v)) };
-                    guard.values.push(node);
-                }
-
-                let values = std::mem::take(&mut guard.values);
-                std::mem::forget(guard);
+                let num: i32 = node_array.len().try_into().expect("len fits in i32");
+                let mut guard = MpvNodeListGuard::from(node_array);
+                let values = mem::take(&mut guard.values);
+                mem::forget(guard);
                 let values = if values.is_empty() {
                     ptr::null_mut()
                 } else {
@@ -183,25 +174,13 @@ impl From<&Node> for *mut mpv_node {
                 let list = Box::new(mpv_node_list { num, values, keys });
                 mpv_node.u.list = Box::into_raw(list);
             }
-            Node::Map(map) => {
+            Node::Map(node_map) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_MAP;
-                let num = map.len().try_into().expect("len fits in i32");
-                let mut guard = MapBuilderGuard {
-                    values: Vec::with_capacity(map.len()),
-                    keys: Vec::with_capacity(map.len()),
-                };
-
-                for (k, v) in map {
-                    let cstring = CString::new(k.as_str()).expect("CString::new failed");
-                    let node = unsafe { *Box::from_raw(Self::from(v)) };
-                    guard.keys.push(cstring.into_raw());
-                    guard.values.push(node);
-                }
-
-                let values = std::mem::take(&mut guard.values);
-                let keys = std::mem::take(&mut guard.keys);
-                std::mem::forget(guard);
-
+                let num = node_map.len().try_into().expect("len fits in i32");
+                let mut guard = MpvNodeListGuard::from(node_map);
+                let values = mem::take(&mut guard.values);
+                let keys = mem::take(&mut guard.keys);
+                mem::forget(guard);
                 let values = if values.is_empty() {
                     ptr::null_mut()
                 } else {
@@ -239,15 +218,13 @@ impl From<&Node> for *mut mpv_node {
 pub struct MpvNodeGuard(*mut mpv_node);
 
 impl MpvNodeGuard {
+    pub fn new(node: Node) -> Self {
+        Self(<*mut mpv_node>::from(node))
+    }
+
     #[must_use]
     pub const fn as_ptr(&self) -> *mut mpv_node {
         self.0
-    }
-}
-
-impl From<&Node> for MpvNodeGuard {
-    fn from(node: &Node) -> Self {
-        Self(<*mut mpv_node>::from(node))
     }
 }
 
@@ -271,12 +248,65 @@ impl Drop for MpvNodeContentsGuard {
     }
 }
 
-struct MapBuilderGuard {
+pub struct MpvNodeListGuard {
     values: Vec<mpv_node>,
     keys: Vec<*mut c_char>,
 }
 
-impl Drop for MapBuilderGuard {
+impl MpvNodeListGuard {
+    pub fn as_mut_ptr(&mut self) -> *mut mpv_node {
+        let mut mpv_node_list = Box::new(mpv_node_list {
+            num: self.values.len() as i32,
+            values: self.values.as_mut_ptr(),
+            keys: self.keys.as_mut_ptr(),
+        });
+
+        let mut mpv_node = Box::new(mpv_node {
+            format: mpv_format_MPV_FORMAT_NODE_ARRAY,
+            u: mpv_node__bindgen_ty_1 {
+                list: mpv_node_list.as_mut(),
+            },
+        });
+
+        mpv_node.as_mut()
+    }
+}
+
+impl From<Vec<Node>> for MpvNodeListGuard {
+    fn from(node_array: Vec<Node>) -> Self {
+        let mut guard = MpvNodeListGuard {
+            values: Vec::with_capacity(node_array.len()),
+            keys: Vec::with_capacity(0),
+        };
+
+        for v in node_array {
+            let node = unsafe { *Box::from_raw(<*mut mpv_node>::from(v)) };
+            guard.values.push(node);
+        }
+
+        guard
+    }
+}
+
+impl From<HashMap<String, Node>> for MpvNodeListGuard {
+    fn from(node_map: HashMap<String, Node>) -> Self {
+        let mut guard = MpvNodeListGuard {
+            values: Vec::with_capacity(node_map.len()),
+            keys: Vec::with_capacity(node_map.len()),
+        };
+
+        for (k, v) in node_map {
+            let cstring = CString::new(k.as_str()).expect("CString::new failed");
+            let node = unsafe { *Box::from_raw(<*mut mpv_node>::from(v)) };
+            guard.keys.push(cstring.into_raw());
+            guard.values.push(node);
+        }
+
+        guard
+    }
+}
+
+impl Drop for MpvNodeListGuard {
     fn drop(&mut self) {
         for child in &mut self.values {
             drop_mpv_node_contents(child);
@@ -330,15 +360,17 @@ fn drop_mpv_node_contents(node: &mut mpv_node) {
                     drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.values, len)));
                 }
 
-                if !list.keys.is_null() {
-                    for &key in slice::from_raw_parts(list.keys, len) {
-                        if !key.is_null() {
-                            drop(CString::from_raw(key));
-                        }
-                    }
-
-                    drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)));
+                if list.keys.is_null() {
+                    return;
                 }
+
+                for &key in slice::from_raw_parts(list.keys, len) {
+                    if !key.is_null() {
+                        drop(CString::from_raw(key));
+                    }
+                }
+
+                drop(Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)));
             }
             mpv_format_MPV_FORMAT_BYTE_ARRAY => {
                 if node.u.ba.is_null() {
@@ -346,10 +378,13 @@ fn drop_mpv_node_contents(node: &mut mpv_node) {
                 }
 
                 let ba = Box::from_raw(node.u.ba);
-                if !ba.data.is_null() {
-                    let slice_ptr = ptr::slice_from_raw_parts_mut(ba.data.cast::<u8>(), ba.size);
-                    drop(Box::from_raw(slice_ptr));
+                let data = ba.data;
+                if data.is_null() {
+                    return;
                 }
+
+                let byte_array = ptr::slice_from_raw_parts_mut(data.cast::<u8>(), ba.size);
+                drop(Box::from_raw(byte_array));
             }
             _ => {}
         }

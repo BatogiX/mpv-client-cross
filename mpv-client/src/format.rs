@@ -1,6 +1,6 @@
 use crate::{
     Handle, Result,
-    node::{MpvNodeContentsGuard, MpvNodeGuard, Node},
+    node::{MpvNodeContentsGuard, MpvNodeGuard, MpvNodeListGuard, Node},
 };
 use mpv_client_sys::{
     mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
     fmt::Display,
-    ptr,
+    ptr, slice,
 };
 
 #[allow(private_bounds)]
@@ -171,11 +171,12 @@ impl Format for Node {
 
         let node = unsafe { &*ptr.cast::<mpv_node>() };
         let result = Self::from(node);
+
         Ok(result)
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let guard = MpvNodeGuard::from(&self);
+        let guard = MpvNodeGuard::new(self);
         fun(guard.as_ptr().cast::<c_void>())
     }
 
@@ -188,7 +189,46 @@ impl Format for Node {
         let _guard = MpvNodeContentsGuard(&raw mut node);
         fun((&raw mut node).cast::<c_void>())?;
         let result = Self::from(&node);
+
         Ok(result)
+    }
+}
+
+impl Format for Vec<Node> {
+    const MPV_FORMAT: u32 = FormatType::NodeArray as u32;
+
+    fn from_ptr(ptr: *const c_void) -> Result<Self> {
+        if ptr.is_null() {
+            return Ok(vec![]);
+        }
+
+        let node = unsafe { &*ptr.cast::<mpv_node>() };
+        let list = unsafe { node.u.list };
+        if list.is_null() {
+            return Ok(vec![]);
+        }
+
+        let list = unsafe { &*list };
+        let num = list.num;
+        let values = list.values;
+        if num <= 0 || values.is_null() {
+            return Ok(vec![]);
+        }
+
+        let num = num.try_into().unwrap_or(0);
+        let values = unsafe { slice::from_raw_parts(values, num) };
+        let node_array = values.iter().map(Node::from).collect();
+
+        Ok(node_array)
+    }
+
+    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+        let mut guard = MpvNodeListGuard::from(self);
+        fun(guard.as_mut_ptr().cast::<c_void>())
+    }
+
+    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+        todo!()
     }
 }
 

@@ -8,7 +8,12 @@ mod logging;
 mod node;
 mod options;
 
-use crate::{error::MpvError, format::FormatType, node::MpvNodeContentsGuard, options::CoercingString};
+use crate::{
+    error::MpvError,
+    format::FormatType,
+    node::{ClonedMpvNode, MpvNode},
+    options::CoercingString,
+};
 pub use error::{Error, Result};
 pub use format::{Format, OsdString};
 pub use mpv_client_sys::mpv_handle;
@@ -35,7 +40,6 @@ use std::{
     ffi::{CStr, CString, NulError, c_char, c_void},
     fmt, fs, iter,
     marker::PhantomData,
-    mem::MaybeUninit,
     ops::Deref,
     path::{Path, PathBuf},
     ptr, result,
@@ -376,7 +380,7 @@ impl Handle {
         let args: Vec<CString> = args
             .into_iter()
             .map(|s| CString::new(s.into()))
-            .collect::<std::result::Result<Vec<CString>, NulError>>()?;
+            .collect::<result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         unsafe { result!(mpv_command(self.as_ptr().cast_mut(), raw_args.as_mut_ptr())) }
@@ -392,19 +396,21 @@ impl Handle {
         I: IntoIterator<Item = S>,
         S: Into<Vec<u8>>,
     {
-        let args: Vec<CString> = args
+        let c_args: Vec<CString> = args
             .into_iter()
             .map(|s| CString::new(s.into()))
-            .collect::<std::result::Result<Vec<CString>, NulError>>()?;
+            .collect::<result::Result<Vec<CString>, NulError>>()?;
 
-        let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
-        let mut res = MaybeUninit::<mpv_node>::zeroed();
-        let res_ptr = res.as_mut_ptr();
-        let ret = unsafe { mpv_command_ret(self.as_ptr().cast_mut(), raw_args.as_mut_ptr(), res_ptr) };
-        let _guard = MpvNodeContentsGuard(res_ptr);
-        result!(ret)?;
-        let result = unsafe { Node::from(res.assume_init_ref()) };
-        Ok(result)
+        let mut args: Vec<*const c_char> = c_args
+            .iter()
+            .map(|s| s.as_ptr())
+            .chain(iter::once(ptr::null()))
+            .collect();
+
+        let mut mpv_node = ClonedMpvNode::default();
+        result!(unsafe { mpv_command_ret(self.as_mut_ptr(), args.as_mut_ptr(), mpv_node.as_mut_ptr()) })?;
+        let node = Node::from(mpv_node);
+        Ok(node)
     }
 
     /// Same as [`Handle::command`], but run the command asynchronously.
@@ -431,7 +437,7 @@ impl Handle {
         let args: Vec<CString> = args
             .into_iter()
             .map(|s| CString::new(s.into()))
-            .collect::<std::result::Result<Vec<CString>, NulError>>()?;
+            .collect::<result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
         unsafe {
@@ -904,6 +910,12 @@ impl Handle {
     #[must_use]
     const fn as_ptr(&self) -> *const mpv_handle {
         self.inner.as_ptr()
+    }
+
+    #[inline]
+    #[must_use]
+    const fn as_mut_ptr(&self) -> *mut mpv_handle {
+        self.inner.as_ptr().cast_mut()
     }
 
     /// Disconnect and destroy the [`mpv_handle`]. The `ctx` pointer will be deallocated

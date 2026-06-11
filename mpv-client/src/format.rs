@@ -1,12 +1,12 @@
 use crate::{
     Handle, Result,
-    node::{MpvNodeContentsGuard, MpvNodeGuard, MpvNodeListGuard, Node},
+    node::{BorrowedMpvNode, ClonedMpvNode, MpvNode as _, Node, OwnedMpvNode},
 };
 use mpv_client_sys::{
     mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
     mpv_format_MPV_FORMAT_INT64, mpv_format_MPV_FORMAT_NODE, mpv_format_MPV_FORMAT_NODE_ARRAY,
     mpv_format_MPV_FORMAT_NODE_MAP, mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_OSD_STRING,
-    mpv_format_MPV_FORMAT_STRING, mpv_node, mpv_node__bindgen_ty_1,
+    mpv_format_MPV_FORMAT_STRING, mpv_node,
 };
 use std::{
     collections::HashMap,
@@ -74,16 +74,19 @@ impl Format for String {
     /// # Errors
     /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
-        let mut ptr: *mut c_char = ptr::null_mut();
-        fun((&raw mut ptr).cast::<c_void>())?;
-        let _guard = MpvFreeGuard(ptr);
+        let mut mpv_string_ptr: *mut c_char = ptr::null_mut();
+        fun((&raw mut mpv_string_ptr).cast::<c_void>())?;
+        let _mpv_string = ClonedMpvString(mpv_string_ptr);
 
-        if ptr.is_null() {
+        if mpv_string_ptr.is_null() {
             return Ok(Self::new());
         }
 
-        let result = unsafe { CStr::from_ptr(ptr) }.to_str().map(ToOwned::to_owned);
-        Ok(result?)
+        let string = unsafe { CStr::from_ptr(mpv_string_ptr) }
+            .to_str()
+            .map(ToOwned::to_owned)?;
+
+        Ok(string)
     }
 }
 
@@ -97,7 +100,7 @@ impl Format for OsdString {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        self.0.to_mpv(fun)
+        String::to_mpv(self.0, fun)
     }
 
     /// # Errors
@@ -169,28 +172,19 @@ impl Format for Node {
             return Ok(Self::None);
         }
 
-        let node = unsafe { &*ptr.cast::<mpv_node>() };
-        let result = Self::from(node);
-
-        Ok(result)
+        let mpv_node = unsafe { *ptr.cast::<BorrowedMpvNode>() };
+        Ok(Self::from(mpv_node))
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let guard = MpvNodeGuard::new(self);
-        fun(guard.as_ptr().cast::<c_void>())
+        let mut mpv_node = OwnedMpvNode::new(self);
+        fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
-        let mut node = mpv_node {
-            format: FormatType::None as u32,
-            u: mpv_node__bindgen_ty_1 { int64: 0 },
-        };
-
-        let _guard = MpvNodeContentsGuard(&raw mut node);
-        fun((&raw mut node).cast::<c_void>())?;
-        let result = Self::from(&node);
-
-        Ok(result)
+        let mut mpv_node = ClonedMpvNode::default();
+        fun(mpv_node.as_mut_ptr().cast::<c_void>())?;
+        Ok(Self::from(mpv_node))
     }
 }
 
@@ -244,8 +238,8 @@ impl Sealed for Vec<Node> {}
 impl Sealed for HashMap<String, Node> {}
 impl Sealed for Vec<u8> {}
 
-struct MpvFreeGuard(*mut c_char);
-impl Drop for MpvFreeGuard {
+struct ClonedMpvString(*mut c_char);
+impl Drop for ClonedMpvString {
     fn drop(&mut self) {
         Handle::free(self.0.cast::<c_void>());
     }

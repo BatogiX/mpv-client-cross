@@ -255,26 +255,26 @@ pub struct MpvNodeListGuard {
 
 impl MpvNodeListGuard {
     pub fn as_mut_ptr(&mut self) -> *mut mpv_node {
-        let mut mpv_node_list = Box::new(mpv_node_list {
+        let mpv_node_list = Box::new(mpv_node_list {
             num: self.values.len() as i32,
             values: self.values.as_mut_ptr(),
             keys: self.keys.as_mut_ptr(),
         });
 
-        let mut mpv_node = Box::new(mpv_node {
+        let mpv_node_list = Box::into_raw(mpv_node_list);
+
+        let mpv_node = Box::new(mpv_node {
             format: mpv_format_MPV_FORMAT_NODE_ARRAY,
-            u: mpv_node__bindgen_ty_1 {
-                list: mpv_node_list.as_mut(),
-            },
+            u: mpv_node__bindgen_ty_1 { list: mpv_node_list },
         });
 
-        mpv_node.as_mut()
+        Box::into_raw(mpv_node)
     }
 }
 
 impl From<Vec<Node>> for MpvNodeListGuard {
     fn from(node_array: Vec<Node>) -> Self {
-        let mut guard = MpvNodeListGuard {
+        let mut guard = Self {
             values: Vec::with_capacity(node_array.len()),
             keys: Vec::with_capacity(0),
         };
@@ -290,7 +290,7 @@ impl From<Vec<Node>> for MpvNodeListGuard {
 
 impl From<HashMap<String, Node>> for MpvNodeListGuard {
     fn from(node_map: HashMap<String, Node>) -> Self {
-        let mut guard = MpvNodeListGuard {
+        let mut guard = Self {
             values: Vec::with_capacity(node_map.len()),
             keys: Vec::with_capacity(node_map.len()),
         };

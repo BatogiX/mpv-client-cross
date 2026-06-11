@@ -11,6 +11,7 @@ use mpv_client_sys::{
 use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
+    fmt::Display,
     ptr,
 };
 
@@ -31,11 +32,11 @@ pub trait Format: Sized + Default + Sealed {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self>;
 }
 
-impl Format for None {
+impl Format for () {
     const MPV_FORMAT: u32 = FormatType::None as u32;
 
     fn from_ptr(_ptr: *const c_void) -> Result<Self> {
-        Ok(Self)
+        Ok(())
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -44,7 +45,7 @@ impl Format for None {
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         fun(ptr::null_mut())?;
-        Ok(Self)
+        Ok(())
     }
 }
 
@@ -192,7 +193,7 @@ impl Format for Node {
 }
 
 trait Sealed {}
-impl Sealed for None {}
+impl Sealed for () {}
 impl Sealed for String {}
 impl Sealed for OsdString {}
 impl Sealed for bool {}
@@ -211,7 +212,7 @@ impl Drop for MpvFreeGuard {
 }
 
 #[repr(u32)]
-enum FormatType {
+pub enum FormatType {
     None = mpv_format_MPV_FORMAT_NONE,
     String = mpv_format_MPV_FORMAT_STRING,
     OsdString = mpv_format_MPV_FORMAT_OSD_STRING,
@@ -224,8 +225,42 @@ enum FormatType {
     ByteArray = mpv_format_MPV_FORMAT_BYTE_ARRAY,
 }
 
-#[derive(Debug, Default)]
-pub struct OsdString(pub String);
+impl TryFrom<u32> for FormatType {
+    type Error = crate::Error;
+
+    fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
+        match value {
+            mpv_format_MPV_FORMAT_NONE => Ok(Self::None),
+            mpv_format_MPV_FORMAT_STRING => Ok(Self::String),
+            mpv_format_MPV_FORMAT_OSD_STRING => Ok(Self::OsdString),
+            mpv_format_MPV_FORMAT_FLAG => Ok(Self::Bool),
+            mpv_format_MPV_FORMAT_INT64 => Ok(Self::Int),
+            mpv_format_MPV_FORMAT_DOUBLE => Ok(Self::Double),
+            mpv_format_MPV_FORMAT_NODE => Ok(Self::Node),
+            mpv_format_MPV_FORMAT_NODE_ARRAY => Ok(Self::NodeArray),
+            mpv_format_MPV_FORMAT_NODE_MAP => Ok(Self::NodeMap),
+            mpv_format_MPV_FORMAT_BYTE_ARRAY => Ok(Self::ByteArray),
+            value => Err(crate::Error::UnknownFormat(value)),
+        }
+    }
+}
+
+impl Display for FormatType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::String => f.write_str("String"),
+            Self::OsdString => f.write_str("OsdString"),
+            Self::Bool => f.write_str("Bool"),
+            Self::Int => f.write_str("Int"),
+            Self::Double => f.write_str("Double"),
+            Self::Node => f.write_str("Node"),
+            Self::NodeArray => f.write_str("NodeArray"),
+            Self::NodeMap => f.write_str("NodeMap"),
+            Self::ByteArray => f.write_str("ByteArray"),
+        }
+    }
+}
 
 #[derive(Debug, Default)]
-pub struct None;
+pub struct OsdString(pub String);

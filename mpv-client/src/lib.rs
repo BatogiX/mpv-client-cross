@@ -8,9 +8,9 @@ mod logging;
 mod node;
 mod options;
 
-use crate::{error::MpvError, node::MpvNodeContentsGuard, options::CoercingString};
+use crate::{error::MpvError, format::FormatType, node::MpvNodeContentsGuard, options::CoercingString};
 pub use error::{Error, Result};
-pub use format::Format;
+pub use format::{Format, OsdString};
 pub use mpv_client_sys::mpv_handle;
 use mpv_client_sys::{
     mpv_abort_async_command, mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async,
@@ -1162,11 +1162,14 @@ impl fmt::Display for Property<'_> {
             .or_else(|| self.data::<Node>().map(|v| v.to_string()))
             .unwrap_or_else(|| "None".to_owned());
 
+        let format = FormatType::try_from(self.format())
+            .map_or_else(|_| format!("Unknown ({})", self.format()), |fmt| format!("{fmt}"));
+
         write!(
             f,
             "Property {{\n    name: {}\n    format: {}\n    data: {}\n}}",
             self.name(),
-            self.format(),
+            format,
             data
         )
     }

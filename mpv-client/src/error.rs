@@ -26,6 +26,9 @@ pub enum Error {
 
     #[error("{0}")]
     Utf8(#[from] Utf8Error),
+
+    #[error("unknown or invalid mpv format type: {0}")]
+    UnknownFormat(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

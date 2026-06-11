@@ -6,9 +6,8 @@ use mpv_client_sys::{
 use std::{
     cmp,
     collections::HashMap,
-    ffi::{CStr, CString, c_void},
+    ffi::{CStr, CString},
     fmt::Display,
-    mem,
     ops::Deref,
     ptr, slice,
 };
@@ -453,7 +452,8 @@ fn mpv_node_list_from_node_array(node_array: Vec<Node>) -> *mut mpv_node_list {
             .map(|node| RawMpvNode::new(node).0)
             .collect::<Vec<mpv_node>>()
             .into_boxed_slice(),
-    ) as *mut mpv_node;
+    )
+    .cast();
 
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }
@@ -480,8 +480,8 @@ fn mpv_node_list_from_node_map(node_map: HashMap<String, Node>) -> *mut mpv_node
         .collect();
 
     let (keys, values) = (
-        Box::into_raw(keys.into_boxed_slice()) as *mut *mut i8,
-        Box::into_raw(values.into_boxed_slice()) as *mut mpv_node,
+        Box::into_raw(keys.into_boxed_slice()).cast(),
+        Box::into_raw(values.into_boxed_slice()).cast(),
     );
 
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))

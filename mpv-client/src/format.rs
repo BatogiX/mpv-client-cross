@@ -11,6 +11,7 @@ use mpv_client_sys::{
 use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
+    ptr,
 };
 
 #[allow(private_bounds)]
@@ -28,6 +29,23 @@ pub trait Format: Sized + Default + Sealed {
     /// # Errors
     /// If the FFI callback fails or the stored value cannot be recovered.
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self>;
+}
+
+impl Format for None {
+    const MPV_FORMAT: u32 = FormatType::None as u32;
+
+    fn from_ptr(_ptr: *const c_void) -> Result<Self> {
+        Ok(Self)
+    }
+
+    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+        fun(ptr::null_mut())
+    }
+
+    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+        fun(ptr::null_mut())?;
+        Ok(Self)
+    }
 }
 
 impl Format for String {
@@ -55,7 +73,7 @@ impl Format for String {
     /// # Errors
     /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
-        let mut ptr: *mut c_char = std::ptr::null_mut();
+        let mut ptr: *mut c_char = ptr::null_mut();
         fun((&raw mut ptr).cast::<c_void>())?;
         let _guard = MpvFreeGuard(ptr);
 
@@ -174,6 +192,7 @@ impl Format for Node {
 }
 
 trait Sealed {}
+impl Sealed for None {}
 impl Sealed for String {}
 impl Sealed for OsdString {}
 impl Sealed for bool {}
@@ -207,3 +226,6 @@ enum FormatType {
 
 #[derive(Debug, Default)]
 pub struct OsdString(pub String);
+
+#[derive(Debug, Default)]
+pub struct None;

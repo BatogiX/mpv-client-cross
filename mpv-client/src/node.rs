@@ -6,13 +6,13 @@ use mpv_client_sys::{
 use std::{
     cmp,
     collections::HashMap,
-    ffi::{CStr, CString},
+    ffi::{CStr, CString, c_void},
     fmt::Display,
     ops::Deref,
     ptr, slice,
 };
 
-use crate::{Handle, format::FormatType};
+use crate::{Format, Handle, format::FormatType};
 
 #[derive(Debug, Clone, Default)]
 pub enum Node {
@@ -155,6 +155,16 @@ pub trait MpvNode {
 #[derive(Clone, Copy)]
 pub struct BorrowedMpvNode<'a>(pub &'a mpv_node);
 
+impl BorrowedMpvNode<'_> {
+    pub const fn from_ptr(ptr: *const c_void) -> Option<Self> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Self(unsafe { &*ptr.cast::<mpv_node>() }))
+        }
+    }
+}
+
 impl<'a> Deref for BorrowedMpvNode<'a> {
     type Target = &'a mpv_node;
 
@@ -163,9 +173,9 @@ impl<'a> Deref for BorrowedMpvNode<'a> {
     }
 }
 
-impl<'a> MpvNode for BorrowedMpvNode<'a> {
-    fn as_ref(&self) -> BorrowedMpvNode<'a> {
-        self.clone()
+impl MpvNode for BorrowedMpvNode<'_> {
+    fn as_ref(&self) -> Self {
+        *self
     }
 
     fn as_mut_ptr(&mut self) -> *mut mpv_node {
@@ -439,16 +449,8 @@ impl<T: MpvNode> From<T> for Node {
 }
 
 impl From<ClonedMpvNode> for Vec<Node> {
-    fn from(mpv_node_wrapper: ClonedMpvNode) -> Self {
-        let mpv_node = mpv_node_wrapper.as_ref();
-        let list = unsafe { mpv_node.u.list };
-        if list.is_null() {
-            return vec![];
-        }
-
-        let list = unsafe { &*list };
-
-        vec![]
+    fn from(mut mpv_node_wrapper: ClonedMpvNode) -> Self {
+        Self::from_ptr(mpv_node_wrapper.as_mut_ptr().cast())
     }
 }
 

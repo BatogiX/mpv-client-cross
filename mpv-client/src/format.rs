@@ -167,11 +167,10 @@ impl Format for Node {
     const MPV_FORMAT: u32 = FormatType::Node as u32;
 
     fn from_ptr(ptr: *const c_void) -> Self {
-        if ptr.is_null() {
+        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
             return Self::None;
-        }
+        };
 
-        let mpv_node = unsafe { *ptr.cast::<BorrowedMpvNode>() };
         Self::from(mpv_node)
     }
 
@@ -191,11 +190,10 @@ impl Format for Vec<Node> {
     const MPV_FORMAT: u32 = FormatType::NodeArray as u32;
 
     fn from_ptr(ptr: *const c_void) -> Self {
-        if ptr.is_null() {
+        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
             return vec![];
-        }
+        };
 
-        let mpv_node = unsafe { *ptr.cast::<BorrowedMpvNode>() };
         let list = unsafe { mpv_node.u.list };
         if list.is_null() {
             return vec![];
@@ -211,12 +209,11 @@ impl Format for Vec<Node> {
         #[allow(clippy::cast_sign_loss)]
         let num = cmp::min(num, i32::MAX) as usize;
         let values = unsafe { slice::from_raw_parts(values, num) };
-        let node_array = values
+
+        values
             .iter()
             .map(|mpv_node| Node::from(BorrowedMpvNode(mpv_node)))
-            .collect();
-
-        node_array
+            .collect()
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {

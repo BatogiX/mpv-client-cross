@@ -9,11 +9,10 @@ use mpv_client_sys::{
     mpv_format_MPV_FORMAT_STRING,
 };
 use std::{
-    cmp,
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
     fmt::Display,
-    ptr, slice,
+    ptr,
 };
 
 #[allow(private_bounds)]
@@ -171,7 +170,7 @@ impl Format for Node {
             return Self::None;
         };
 
-        Self::from(mpv_node)
+        mpv_node.to_node()
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -182,7 +181,7 @@ impl Format for Node {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
-        Ok(Self::from(mpv_node))
+        Ok(mpv_node.to_node())
     }
 }
 
@@ -194,26 +193,7 @@ impl Format for Vec<Node> {
             return vec![];
         };
 
-        let list = unsafe { mpv_node.u.list };
-        if list.is_null() {
-            return vec![];
-        }
-
-        let list = unsafe { &*list };
-        let num = list.num;
-        let values = list.values;
-        if num <= 0 || values.is_null() {
-            return vec![];
-        }
-
-        #[allow(clippy::cast_sign_loss)]
-        let num = cmp::min(num, i32::MAX) as usize;
-        let values = unsafe { slice::from_raw_parts(values, num) };
-
-        values
-            .iter()
-            .map(|mpv_node| Node::from(BorrowedMpvNode(mpv_node)))
-            .collect()
+        mpv_node.to_node_array()
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -224,7 +204,7 @@ impl Format for Vec<Node> {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
-        Ok(Self::from(mpv_node))
+        Ok(mpv_node.to_node_array())
     }
 }
 

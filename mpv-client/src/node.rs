@@ -12,7 +12,7 @@ use std::{
     ptr, slice,
 };
 
-use crate::{Format, Handle, format::FormatType};
+use crate::{Handle, format::FormatType};
 
 #[derive(Debug, Clone, Default)]
 pub enum Node {
@@ -42,111 +42,123 @@ impl Display for Node {
     }
 }
 
-// pub struct MpvNodeGuard(*mut mpv_node);
-
-// impl MpvNodeGuard {
-//     pub fn new(node: Node) -> Self {
-//         Self(<*mut mpv_node>::from(node))
-//     }
-
-//     #[must_use]
-//     pub const fn as_ptr(&self) -> *mut mpv_node {
-//         self.0
-//     }
-// }
-
-// impl Drop for MpvNodeGuard {
-//     fn drop(&mut self) {
-//         let ptr = self.0;
-//         if ptr.is_null() {
-//             return;
-//         }
-
-//         unsafe { drop_mpv_node_contents(&mut *ptr) };
-//         unsafe { drop(Box::from_raw(ptr)) }
-//     }
-// }
-
-// pub struct MpvNodeContentsGuard(pub *mut mpv_node);
-
-// impl Drop for MpvNodeContentsGuard {
-//     fn drop(&mut self) {
-//         Handle::free_node_contents(self.0);
-//     }
-// }
-
-// pub struct MpvNodeListGuard {
-//     values: Vec<mpv_node>,
-//     keys: Vec<*mut c_char>,
-// }
-
-// impl MpvNodeListGuard {
-//     pub fn as_mut_ptr(&mut self) -> *mut mpv_node {
-//         let mpv_node_list = Box::into_raw(Box::new(mpv_node_list {
-//             num: self.values.len() as i32,
-//             values: self.values.as_mut_ptr(),
-//             keys: self.keys.as_mut_ptr(),
-//         }));
-
-//         Box::into_raw(Box::new(mpv_node {
-//             format: mpv_format_MPV_FORMAT_NODE_ARRAY,
-//             u: mpv_node__bindgen_ty_1 { list: mpv_node_list },
-//         }))
-//     }
-// }
-
-// impl From<Vec<Node>> for MpvNodeListGuard {
-//     fn from(node_array: Vec<Node>) -> Self {
-//         let mut guard = Self {
-//             values: Vec::with_capacity(node_array.len()),
-//             keys: Vec::with_capacity(0),
-//         };
-
-//         for v in node_array {
-//             let node = unsafe { *Box::from_raw(<*mut mpv_node>::from(v)) };
-//             guard.values.push(node);
-//         }
-
-//         guard
-//     }
-// }
-
-// impl From<HashMap<String, Node>> for MpvNodeListGuard {
-//     fn from(node_map: HashMap<String, Node>) -> Self {
-//         let mut guard = Self {
-//             values: Vec::with_capacity(node_map.len()),
-//             keys: Vec::with_capacity(node_map.len()),
-//         };
-
-//         for (k, v) in node_map {
-//             let cstring = CString::new(k.as_str()).expect("CString::new failed");
-//             let node = unsafe { *Box::from_raw(<*mut mpv_node>::from(v)) };
-//             guard.keys.push(cstring.into_raw());
-//             guard.values.push(node);
-//         }
-
-//         guard
-//     }
-// }
-
-// impl Drop for MpvNodeListGuard {
-//     fn drop(&mut self) {
-//         for child in &mut self.values {
-//             drop_mpv_node_contents(child);
-//         }
-
-//         for &key in &self.keys {
-//             if !key.is_null() {
-//                 unsafe { drop(CString::from_raw(key)) };
-//             }
-//         }
-//     }
-// }
-
 /// Shared methods
-pub trait MpvNode {
+pub trait MpvNode: Sized {
     fn as_ref(&self) -> BorrowedMpvNode<'_>;
     fn as_mut_ptr(&mut self) -> *mut mpv_node;
+    fn to_node(self) -> Node {
+        let mpv_node = self.as_ref();
+        unsafe {
+            match mpv_node.format {
+                mpv_format_MPV_FORMAT_STRING => {
+                    if mpv_node.u.string.is_null() {
+                        Node::None
+                    } else {
+                        Node::String(CStr::from_ptr(mpv_node.u.string).to_string_lossy().into_owned())
+                    }
+                }
+                mpv_format_MPV_FORMAT_INT64 => Node::Int(mpv_node.u.int64),
+                mpv_format_MPV_FORMAT_DOUBLE => Node::Double(mpv_node.u.double_),
+                mpv_format_MPV_FORMAT_FLAG => Node::Bool(mpv_node.u.flag != 0),
+                mpv_format_MPV_FORMAT_NODE_ARRAY => {
+                    if mpv_node.u.list.is_null() {
+                        return Node::Array(Vec::new());
+                    }
+
+                    let list = &*mpv_node.u.list;
+                    let len: usize = list.num.try_into().expect("num fits in usize");
+
+                    let values = if len == 0 || list.values.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(list.values, len)
+                    };
+
+                    Node::Array(
+                        values
+                            .iter()
+                            .map(|raw_node| BorrowedMpvNode(raw_node).to_node())
+                            .collect(),
+                    )
+                }
+                mpv_format_MPV_FORMAT_NODE_MAP => {
+                    if mpv_node.u.list.is_null() {
+                        return Node::Map(HashMap::new());
+                    }
+
+                    let list = &*mpv_node.u.list;
+                    let len: usize = list.num.try_into().expect("num fits in usize");
+
+                    let values = if len == 0 || list.values.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(list.values, len)
+                    };
+
+                    let keys = if len == 0 || list.keys.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(list.keys, len)
+                    };
+
+                    let map = keys
+                        .iter()
+                        .zip(values.iter())
+                        .filter_map(|(&k, v)| {
+                            if k.is_null() {
+                                None
+                            } else {
+                                let key = CStr::from_ptr(k).to_string_lossy().into_owned();
+                                (key, BorrowedMpvNode(v).to_node()).into()
+                            }
+                        })
+                        .collect();
+
+                    Node::Map(map)
+                }
+                mpv_format_MPV_FORMAT_BYTE_ARRAY => {
+                    if mpv_node.u.ba.is_null() {
+                        return Node::ByteArray(Vec::new());
+                    }
+
+                    let arr: &mpv_byte_array = &*mpv_node.u.ba;
+
+                    let data = if arr.size == 0 || arr.data.is_null() {
+                        &[]
+                    } else {
+                        slice::from_raw_parts(arr.data as *const u8, arr.size)
+                    };
+
+                    Node::ByteArray(data.to_vec())
+                }
+                _ => Node::None,
+            }
+        }
+    }
+
+    fn to_node_array(self) -> Vec<Node> {
+        let mpv_node = self.as_ref();
+        let list = unsafe { mpv_node.u.list };
+        if list.is_null() {
+            return vec![];
+        }
+
+        let list = unsafe { &*list };
+        let num = list.num;
+        let values = list.values;
+        if num <= 0 || values.is_null() {
+            return vec![];
+        }
+
+        #[allow(clippy::cast_sign_loss)]
+        let num = cmp::min(num, i32::MAX) as usize;
+        let values = unsafe { slice::from_raw_parts(values, num) };
+
+        values
+            .iter()
+            .map(|mpv_node| BorrowedMpvNode(mpv_node).to_node())
+            .collect()
+    }
 }
 
 /// Cleaned by libmpv.
@@ -353,104 +365,6 @@ impl Drop for RawMpvNode {
         let ptr = &raw mut self.0;
         unsafe { drop_mpv_node_contents(&mut *ptr) };
         unsafe { drop(Box::from_raw(ptr)) }
-    }
-}
-
-impl<T: MpvNode> From<T> for Node {
-    fn from(mpv_node_wrapper: T) -> Self {
-        let mpv_node = mpv_node_wrapper.as_ref();
-        unsafe {
-            match mpv_node.format {
-                mpv_format_MPV_FORMAT_STRING => {
-                    if mpv_node.u.string.is_null() {
-                        Self::None
-                    } else {
-                        Self::String(CStr::from_ptr(mpv_node.u.string).to_string_lossy().into_owned())
-                    }
-                }
-                mpv_format_MPV_FORMAT_INT64 => Self::Int(mpv_node.u.int64),
-                mpv_format_MPV_FORMAT_DOUBLE => Self::Double(mpv_node.u.double_),
-                mpv_format_MPV_FORMAT_FLAG => Self::Bool(mpv_node.u.flag != 0),
-                mpv_format_MPV_FORMAT_NODE_ARRAY => {
-                    if mpv_node.u.list.is_null() {
-                        return Self::Array(Vec::new());
-                    }
-
-                    let list = &*mpv_node.u.list;
-                    let len: usize = list.num.try_into().expect("num fits in usize");
-
-                    let values = if len == 0 || list.values.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(list.values, len)
-                    };
-
-                    Self::Array(
-                        values
-                            .iter()
-                            .map(|raw_node| Self::from(BorrowedMpvNode(raw_node)))
-                            .collect(),
-                    )
-                }
-                mpv_format_MPV_FORMAT_NODE_MAP => {
-                    if mpv_node.u.list.is_null() {
-                        return Self::Map(HashMap::new());
-                    }
-
-                    let list = &*mpv_node.u.list;
-                    let len: usize = list.num.try_into().expect("num fits in usize");
-
-                    let values = if len == 0 || list.values.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(list.values, len)
-                    };
-
-                    let keys = if len == 0 || list.keys.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(list.keys, len)
-                    };
-
-                    let map = keys
-                        .iter()
-                        .zip(values.iter())
-                        .filter_map(|(&k, v)| {
-                            if k.is_null() {
-                                None
-                            } else {
-                                let key = CStr::from_ptr(k).to_string_lossy().into_owned();
-                                (key, Self::from(BorrowedMpvNode(v))).into()
-                            }
-                        })
-                        .collect();
-
-                    Self::Map(map)
-                }
-                mpv_format_MPV_FORMAT_BYTE_ARRAY => {
-                    if mpv_node.u.ba.is_null() {
-                        return Self::ByteArray(Vec::new());
-                    }
-
-                    let arr: &mpv_byte_array = &*mpv_node.u.ba;
-
-                    let data = if arr.size == 0 || arr.data.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(arr.data as *const u8, arr.size)
-                    };
-
-                    Self::ByteArray(data.to_vec())
-                }
-                _ => Self::None,
-            }
-        }
-    }
-}
-
-impl From<ClonedMpvNode> for Vec<Node> {
-    fn from(mut mpv_node_wrapper: ClonedMpvNode) -> Self {
-        Self::from_ptr(mpv_node_wrapper.as_mut_ptr().cast())
     }
 }
 

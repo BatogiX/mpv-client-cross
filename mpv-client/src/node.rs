@@ -1,8 +1,4 @@
-use mpv_client_sys::{
-    mpv_byte_array, mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
-    mpv_format_MPV_FORMAT_INT64, mpv_format_MPV_FORMAT_NODE_ARRAY, mpv_format_MPV_FORMAT_NODE_MAP,
-    mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_STRING, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list,
-};
+use mpv_client_sys::{mpv_byte_array, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list};
 use std::{
     cmp,
     collections::HashMap,
@@ -301,34 +297,34 @@ impl RawMpvNode {
 
         match node {
             Node::None => {
-                mpv_node.format = mpv_format_MPV_FORMAT_NONE;
+                mpv_node.format = FormatType::None as u32;
             }
             Node::String(string) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_STRING;
+                mpv_node.format = FormatType::String as u32;
                 mpv_node.u.string = CString::new(string).expect("CString::new failed").into_raw();
             }
             Node::Int(int64) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_INT64;
+                mpv_node.format = FormatType::Int as u32;
                 mpv_node.u.int64 = int64;
             }
             Node::Double(float64) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_DOUBLE;
+                mpv_node.format = FormatType::Double as u32;
                 mpv_node.u.double_ = float64;
             }
             Node::Bool(bool) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_FLAG;
+                mpv_node.format = FormatType::Bool as u32;
                 mpv_node.u.flag = i32::from(bool);
             }
             Node::Array(node_array) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_NODE_ARRAY;
+                mpv_node.format = FormatType::NodeArray as u32;
                 mpv_node.u.list = mpv_node_list_from_node_array(node_array);
             }
             Node::Map(node_map) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_NODE_MAP;
+                mpv_node.format = FormatType::NodeMap as u32;
                 mpv_node.u.list = mpv_node_list_from_node_map(node_map);
             }
             Node::ByteArray(byte_array) => {
-                mpv_node.format = mpv_format_MPV_FORMAT_BYTE_ARRAY;
+                mpv_node.format = FormatType::ByteArray as u32;
                 mpv_node.u.ba = mpv_byte_array_from_byte_array(byte_array);
             }
         }
@@ -351,14 +347,14 @@ impl Drop for RawMpvNode {
     fn drop(&mut self) {
         fn drop_mpv_node(mpv_node: &mut mpv_node) {
             unsafe {
-                match mpv_node.format {
-                    mpv_format_MPV_FORMAT_STRING => {
+                match FormatType::try_from(mpv_node.format).unwrap_or(FormatType::None) {
+                    FormatType::String => {
                         if mpv_node.u.string.is_null() {
                             return;
                         }
                         drop(CString::from_raw(mpv_node.u.string));
                     }
-                    mpv_format_MPV_FORMAT_NODE_ARRAY | mpv_format_MPV_FORMAT_NODE_MAP => {
+                    FormatType::NodeArray | FormatType::NodeMap => {
                         let list = mpv_node.u.list;
                         if list.is_null() {
                             return;
@@ -385,7 +381,7 @@ impl Drop for RawMpvNode {
                             drop(Box::from_raw(ptr::slice_from_raw_parts_mut(values, len)));
                         }
                     }
-                    mpv_format_MPV_FORMAT_BYTE_ARRAY => {
+                    FormatType::ByteArray => {
                         let ba = mpv_node.u.ba;
                         if ba.is_null() {
                             return;

@@ -231,6 +231,29 @@ impl Format for HashMap<String, Node> {
     }
 }
 
+impl Format for Vec<u8> {
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
+
+    fn from_ptr(ptr: *const c_void) -> Self {
+        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
+            return Self::new();
+        };
+
+        mpv_node.to_node_byte_array()
+    }
+
+    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+        let mut mpv_node = RawMpvNode::from_node(Node::ByteArray(self));
+        fun(mpv_node.as_mut_ptr().cast::<c_void>())
+    }
+
+    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+        let mut mpv_node = ClonedMpvNode::default();
+        fun(mpv_node.as_mut_ptr().cast())?;
+        Ok(mpv_node.to_node_byte_array())
+    }
+}
+
 trait Sealed {}
 impl Sealed for () {}
 impl Sealed for String {}

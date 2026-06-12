@@ -196,6 +196,25 @@ pub trait MpvNode: Sized {
 
         node_map
     }
+
+    fn to_node_byte_array(self) -> Vec<u8> {
+        let mpv_node = self.as_ref();
+        let ba = unsafe { mpv_node.u.ba };
+        if ba.is_null() {
+            return vec![];
+        }
+
+        let ba = unsafe { &*ba };
+        let data = ba.data;
+        if data.is_null() {
+            return vec![];
+        }
+
+        let size = ba.size;
+        let data = data.cast::<u8>();
+
+        unsafe { slice::from_raw_parts(data, size).to_vec() }
+    }
 }
 
 /// Cleaned by libmpv.
@@ -324,7 +343,7 @@ impl MpvNode for RawMpvNode {
 
 impl Drop for RawMpvNode {
     fn drop(&mut self) {
-        fn drop_mpv_node_contents(mpv_node: &mut mpv_node) {
+        fn drop_mpv_node(mpv_node: &mut mpv_node) {
             unsafe {
                 match mpv_node.format {
                     mpv_format_MPV_FORMAT_STRING => {
@@ -355,7 +374,7 @@ impl Drop for RawMpvNode {
                         let values = list.values;
                         if !values.is_null() {
                             for mpv_node_child in slice::from_raw_parts_mut(values, len) {
-                                drop_mpv_node_contents(mpv_node_child);
+                                drop_mpv_node(mpv_node_child);
                             }
                             drop(Box::from_raw(ptr::slice_from_raw_parts_mut(values, len)));
                         }
@@ -372,26 +391,14 @@ impl Drop for RawMpvNode {
                             return;
                         }
 
-                        let byte_array = ptr::slice_from_raw_parts_mut(data.cast::<u8>(), ba.size);
-                        drop(Box::from_raw(byte_array));
+                        drop(Box::from_raw(ptr::slice_from_raw_parts_mut(data.cast::<u8>(), ba.size)));
                     }
                     _ => {}
                 }
             }
         }
 
-        log::error!(
-            "dropping RawMpvNode: format: {:#?}, ba: {:#?}, double_: {:#?}, flag: {:#?}, int64: {:#?}, list: {:#?}, string: {:#?},",
-            self.0.format,
-            unsafe { self.0.u.ba },
-            unsafe { self.0.u.double_ },
-            unsafe { self.0.u.flag },
-            unsafe { self.0.u.int64 },
-            unsafe { self.0.u.list },
-            unsafe { self.0.u.string },
-        );
-
-        drop_mpv_node_contents(&mut self.0);
+        drop_mpv_node(&mut self.0);
     }
 }
 

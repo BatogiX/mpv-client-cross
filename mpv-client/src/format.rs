@@ -16,11 +16,51 @@ use std::{
 };
 
 #[allow(private_bounds)]
-pub trait Format: Sized + Default + Sealed {
+pub trait Format: Sealed {
     const MPV_FORMAT: u32;
+}
 
-    /// # Errors
-    /// If the pointer does not point to a valid value of this format.
+impl Format for () {
+    const MPV_FORMAT: u32 = FormatType::None as u32;
+}
+
+impl Format for String {
+    const MPV_FORMAT: u32 = FormatType::String as u32;
+}
+
+impl Format for OsdString {
+    const MPV_FORMAT: u32 = FormatType::OsdString as u32;
+}
+
+impl Format for bool {
+    const MPV_FORMAT: u32 = FormatType::Bool as u32;
+}
+
+impl Format for i64 {
+    const MPV_FORMAT: u32 = FormatType::Int as u32;
+}
+
+impl Format for f64 {
+    const MPV_FORMAT: u32 = FormatType::Double as u32;
+}
+
+impl Format for Node {
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
+}
+
+impl Format for Vec<Node> {
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
+}
+
+impl Format for HashMap<String, Node> {
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
+}
+
+impl Format for Vec<u8> {
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
+}
+
+pub trait Sealed: Sized {
     fn from_ptr(ptr: *const c_void) -> Self;
 
     /// # Errors
@@ -32,9 +72,7 @@ pub trait Format: Sized + Default + Sealed {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self>;
 }
 
-impl Format for () {
-    const MPV_FORMAT: u32 = FormatType::None as u32;
-
+impl Sealed for () {
     fn from_ptr(_ptr: *const c_void) -> Self {}
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -47,11 +85,7 @@ impl Format for () {
     }
 }
 
-impl Format for String {
-    const MPV_FORMAT: u32 = FormatType::String as u32;
-
-    /// # Errors
-    /// Returns an error if the C string is not valid UTF-8.
+impl Sealed for String {
     fn from_ptr(ptr: *const c_void) -> Self {
         let ptr = ptr.cast::<*const c_char>();
         let string_ptr = unsafe { *ptr };
@@ -88,11 +122,7 @@ impl Format for String {
     }
 }
 
-impl Format for OsdString {
-    const MPV_FORMAT: u32 = FormatType::OsdString as u32;
-
-    /// # Errors
-    /// Returns an error if the C string is not valid UTF-8.
+impl Sealed for OsdString {
     fn from_ptr(ptr: *const c_void) -> Self {
         Self(String::from_ptr(ptr))
     }
@@ -108,9 +138,7 @@ impl Format for OsdString {
     }
 }
 
-impl Format for bool {
-    const MPV_FORMAT: u32 = FormatType::Bool as u32;
-
+impl Sealed for bool {
     fn from_ptr(ptr: *const c_void) -> Self {
         unsafe { *ptr.cast::<i32>() != 0 }
     }
@@ -126,9 +154,7 @@ impl Format for bool {
     }
 }
 
-impl Format for i64 {
-    const MPV_FORMAT: u32 = FormatType::Int as u32;
-
+impl Sealed for i64 {
     fn from_ptr(ptr: *const c_void) -> Self {
         unsafe { *ptr.cast() }
     }
@@ -144,9 +170,7 @@ impl Format for i64 {
     }
 }
 
-impl Format for f64 {
-    const MPV_FORMAT: u32 = FormatType::Double as u32;
-
+impl Sealed for f64 {
     fn from_ptr(ptr: *const c_void) -> Self {
         unsafe { *ptr.cast() }
     }
@@ -162,9 +186,7 @@ impl Format for f64 {
     }
 }
 
-impl Format for Node {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
-
+impl Sealed for Node {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
             return Self::None;
@@ -185,9 +207,7 @@ impl Format for Node {
     }
 }
 
-impl Format for Vec<Node> {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
-
+impl Sealed for Vec<Node> {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
             return vec![];
@@ -208,9 +228,7 @@ impl Format for Vec<Node> {
     }
 }
 
-impl Format for HashMap<String, Node> {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
-
+impl Sealed for HashMap<String, Node> {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
             return Self::new();
@@ -231,9 +249,7 @@ impl Format for HashMap<String, Node> {
     }
 }
 
-impl Format for Vec<u8> {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
-
+impl Sealed for Vec<u8> {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
             return Self::new();
@@ -253,18 +269,6 @@ impl Format for Vec<u8> {
         Ok(mpv_node.to_node_byte_array())
     }
 }
-
-trait Sealed {}
-impl Sealed for () {}
-impl Sealed for String {}
-impl Sealed for OsdString {}
-impl Sealed for bool {}
-impl Sealed for i64 {}
-impl Sealed for f64 {}
-impl Sealed for Node {}
-impl Sealed for Vec<Node> {}
-impl Sealed for HashMap<String, Node> {}
-impl Sealed for Vec<u8> {}
 
 struct ClonedMpvString(*mut c_char);
 impl Drop for ClonedMpvString {

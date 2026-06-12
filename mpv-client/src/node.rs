@@ -209,7 +209,7 @@ impl Drop for ClonedMpvNode {
 pub struct RawMpvNode(mpv_node);
 
 impl RawMpvNode {
-    pub fn new(node: Node) -> Self {
+    pub fn from_node(node: Node) -> Self {
         let mut mpv_node = mpv_node {
             format: 0,
             u: mpv_node__bindgen_ty_1 { int64: 0 },
@@ -250,6 +250,10 @@ impl RawMpvNode {
         }
 
         Self(mpv_node)
+    }
+
+    pub fn from_node_array(node_array: Vec<Node>) -> Self {
+        Self::from_node(Node::Array(node_array))
     }
 }
 
@@ -344,25 +348,25 @@ impl Drop for RawMpvNode {
 
 impl<T: MpvNode> From<T> for Node {
     fn from(mpv_node_wrapper: T) -> Self {
-        let node = mpv_node_wrapper.as_ref();
+        let mpv_node = mpv_node_wrapper.as_ref();
         unsafe {
-            match node.format {
+            match mpv_node.format {
                 mpv_format_MPV_FORMAT_STRING => {
-                    if node.u.string.is_null() {
+                    if mpv_node.u.string.is_null() {
                         Self::None
                     } else {
-                        Self::String(CStr::from_ptr(node.u.string).to_string_lossy().into_owned())
+                        Self::String(CStr::from_ptr(mpv_node.u.string).to_string_lossy().into_owned())
                     }
                 }
-                mpv_format_MPV_FORMAT_INT64 => Self::Int(node.u.int64),
-                mpv_format_MPV_FORMAT_DOUBLE => Self::Double(node.u.double_),
-                mpv_format_MPV_FORMAT_FLAG => Self::Bool(node.u.flag != 0),
+                mpv_format_MPV_FORMAT_INT64 => Self::Int(mpv_node.u.int64),
+                mpv_format_MPV_FORMAT_DOUBLE => Self::Double(mpv_node.u.double_),
+                mpv_format_MPV_FORMAT_FLAG => Self::Bool(mpv_node.u.flag != 0),
                 mpv_format_MPV_FORMAT_NODE_ARRAY => {
-                    if node.u.list.is_null() {
+                    if mpv_node.u.list.is_null() {
                         return Self::Array(Vec::new());
                     }
 
-                    let list = &*node.u.list;
+                    let list = &*mpv_node.u.list;
                     let len: usize = list.num.try_into().expect("num fits in usize");
 
                     let values = if len == 0 || list.values.is_null() {
@@ -379,11 +383,11 @@ impl<T: MpvNode> From<T> for Node {
                     )
                 }
                 mpv_format_MPV_FORMAT_NODE_MAP => {
-                    if node.u.list.is_null() {
+                    if mpv_node.u.list.is_null() {
                         return Self::Map(HashMap::new());
                     }
 
-                    let list = &*node.u.list;
+                    let list = &*mpv_node.u.list;
                     let len: usize = list.num.try_into().expect("num fits in usize");
 
                     let values = if len == 0 || list.values.is_null() {
@@ -414,11 +418,11 @@ impl<T: MpvNode> From<T> for Node {
                     Self::Map(map)
                 }
                 mpv_format_MPV_FORMAT_BYTE_ARRAY => {
-                    if node.u.ba.is_null() {
+                    if mpv_node.u.ba.is_null() {
                         return Self::ByteArray(Vec::new());
                     }
 
-                    let arr: &mpv_byte_array = &*node.u.ba;
+                    let arr: &mpv_byte_array = &*mpv_node.u.ba;
 
                     let data = if arr.size == 0 || arr.data.is_null() {
                         &[]
@@ -431,6 +435,20 @@ impl<T: MpvNode> From<T> for Node {
                 _ => Self::None,
             }
         }
+    }
+}
+
+impl From<ClonedMpvNode> for Vec<Node> {
+    fn from(mpv_node_wrapper: ClonedMpvNode) -> Self {
+        let mpv_node = mpv_node_wrapper.as_ref();
+        let list = unsafe { mpv_node.u.list };
+        if list.is_null() {
+            return vec![];
+        }
+
+        let list = unsafe { &*list };
+
+        vec![]
     }
 }
 
@@ -449,7 +467,7 @@ fn mpv_node_list_from_node_array(node_array: Vec<Node>) -> *mut mpv_node_list {
         node_array
             .into_iter()
             .take(num as usize)
-            .map(|node| RawMpvNode::new(node).0)
+            .map(|node| RawMpvNode::from_node(node).0)
             .collect::<Vec<mpv_node>>()
             .into_boxed_slice(),
     )
@@ -474,7 +492,7 @@ fn mpv_node_list_from_node_map(node_map: HashMap<String, Node>) -> *mut mpv_node
         .map(|(key, node)| {
             (
                 CString::new(key).expect("CString::new() failed").into_raw(),
-                RawMpvNode::new(node).0,
+                RawMpvNode::from_node(node).0,
             )
         })
         .collect();

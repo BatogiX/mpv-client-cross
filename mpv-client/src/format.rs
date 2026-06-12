@@ -6,7 +6,7 @@ use mpv_client_sys::{
     mpv_format_MPV_FORMAT_BYTE_ARRAY, mpv_format_MPV_FORMAT_DOUBLE, mpv_format_MPV_FORMAT_FLAG,
     mpv_format_MPV_FORMAT_INT64, mpv_format_MPV_FORMAT_NODE, mpv_format_MPV_FORMAT_NODE_ARRAY,
     mpv_format_MPV_FORMAT_NODE_MAP, mpv_format_MPV_FORMAT_NONE, mpv_format_MPV_FORMAT_OSD_STRING,
-    mpv_format_MPV_FORMAT_STRING, mpv_node,
+    mpv_format_MPV_FORMAT_STRING,
 };
 use std::{
     cmp,
@@ -22,7 +22,7 @@ pub trait Format: Sized + Default + Sealed {
 
     /// # Errors
     /// If the pointer does not point to a valid value of this format.
-    fn from_ptr(ptr: *const c_void) -> Result<Self>;
+    fn from_ptr(ptr: *const c_void) -> Self;
 
     /// # Errors
     /// If the FFI callback fails.
@@ -36,9 +36,7 @@ pub trait Format: Sized + Default + Sealed {
 impl Format for () {
     const MPV_FORMAT: u32 = FormatType::None as u32;
 
-    fn from_ptr(_ptr: *const c_void) -> Result<Self> {
-        Ok(())
-    }
+    fn from_ptr(_ptr: *const c_void) -> Self {}
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
         fun(ptr::null_mut())
@@ -55,15 +53,15 @@ impl Format for String {
 
     /// # Errors
     /// Returns an error if the C string is not valid UTF-8.
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
+    fn from_ptr(ptr: *const c_void) -> Self {
         let ptr = ptr.cast::<*const c_char>();
         let string_ptr = unsafe { *ptr };
 
         if string_ptr.is_null() {
-            return Ok(Self::new());
+            return Self::new();
         }
 
-        Ok(unsafe { CStr::from_ptr(string_ptr) }.to_str()?.to_owned())
+        unsafe { CStr::from_ptr(string_ptr) }.to_string_lossy().into_owned()
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -96,8 +94,8 @@ impl Format for OsdString {
 
     /// # Errors
     /// Returns an error if the C string is not valid UTF-8.
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(Self(String::from_ptr(ptr)?))
+    fn from_ptr(ptr: *const c_void) -> Self {
+        Self(String::from_ptr(ptr))
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -114,8 +112,8 @@ impl Format for OsdString {
 impl Format for bool {
     const MPV_FORMAT: u32 = FormatType::Bool as u32;
 
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(unsafe { *ptr.cast::<c_int>() != 0 })
+    fn from_ptr(ptr: *const c_void) -> Self {
+        unsafe { *ptr.cast::<i32>() != 0 }
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -132,8 +130,8 @@ impl Format for bool {
 impl Format for i64 {
     const MPV_FORMAT: u32 = FormatType::Int as u32;
 
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(unsafe { *ptr.cast::<Self>() })
+    fn from_ptr(ptr: *const c_void) -> Self {
+        unsafe { *ptr.cast() }
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -150,8 +148,8 @@ impl Format for i64 {
 impl Format for f64 {
     const MPV_FORMAT: u32 = FormatType::Double as u32;
 
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
-        Ok(unsafe { *ptr.cast::<Self>() })
+    fn from_ptr(ptr: *const c_void) -> Self {
+        unsafe { *ptr.cast() }
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -168,17 +166,17 @@ impl Format for f64 {
 impl Format for Node {
     const MPV_FORMAT: u32 = FormatType::Node as u32;
 
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
+    fn from_ptr(ptr: *const c_void) -> Self {
         if ptr.is_null() {
-            return Ok(Self::None);
+            return Self::None;
         }
 
         let mpv_node = unsafe { *ptr.cast::<BorrowedMpvNode>() };
-        Ok(Self::from(mpv_node))
+        Self::from(mpv_node)
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mut mpv_node = RawMpvNode::new(self);
+        let mut mpv_node = RawMpvNode::from_node(self);
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
@@ -192,24 +190,25 @@ impl Format for Node {
 impl Format for Vec<Node> {
     const MPV_FORMAT: u32 = FormatType::NodeArray as u32;
 
-    fn from_ptr(ptr: *const c_void) -> Result<Self> {
+    fn from_ptr(ptr: *const c_void) -> Self {
         if ptr.is_null() {
-            return Ok(vec![]);
+            return vec![];
         }
 
         let mpv_node = unsafe { *ptr.cast::<BorrowedMpvNode>() };
         let list = unsafe { mpv_node.u.list };
         if list.is_null() {
-            return Ok(vec![]);
+            return vec![];
         }
 
         let list = unsafe { &*list };
         let num = list.num;
         let values = list.values;
         if num <= 0 || values.is_null() {
-            return Ok(vec![]);
+            return vec![];
         }
 
+        #[allow(clippy::cast_sign_loss)]
         let num = cmp::min(num, i32::MAX) as usize;
         let values = unsafe { slice::from_raw_parts(values, num) };
         let node_array = values
@@ -217,16 +216,18 @@ impl Format for Vec<Node> {
             .map(|mpv_node| Node::from(BorrowedMpvNode(mpv_node)))
             .collect();
 
-        Ok(node_array)
+        node_array
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mut guard = MpvNodeListGuard::from(self);
-        fun(guard.as_mut_ptr().cast::<c_void>())
+        let mut mpv_node = RawMpvNode::from_node_array(self);
+        fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
-        todo!()
+        let mut mpv_node = ClonedMpvNode::default();
+        fun(mpv_node.as_mut_ptr().cast())?;
+        Ok(Self::from(mpv_node))
     }
 }
 

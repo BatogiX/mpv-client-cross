@@ -172,8 +172,6 @@ pub trait MpvNode: Sized {
         let keys = list.keys;
         let values = list.values;
         if num <= 0 || values.is_null() || keys.is_null() {
-            log::error!("num <= 0 || values.is_null() || keys.is_null()");
-            log::error!("num: {num}, values: {values:#?}, keys: {keys:#?}");
             return HashMap::new();
         }
 
@@ -185,7 +183,6 @@ pub trait MpvNode: Sized {
         let mut node_map = HashMap::with_capacity(num);
         for (key, value) in keys.iter().zip(values) {
             if key.is_null() {
-                log::error!("key.is_null()");
                 return HashMap::new();
             }
 
@@ -451,8 +448,6 @@ fn mpv_node_list_from_node_map(node_map: HashMap<String, Node>) -> *mut mpv_node
         Box::into_raw(keys.into_boxed_slice()).cast(),
         Box::into_raw(values.into_boxed_slice()).cast(),
     );
-
-    log::error!("keys and values created");
 
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }

@@ -9,6 +9,7 @@ use mpv_client_sys::{
     mpv_format_MPV_FORMAT_STRING, mpv_node,
 };
 use std::{
+    cmp,
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
     fmt::Display,
@@ -196,8 +197,8 @@ impl Format for Vec<Node> {
             return Ok(vec![]);
         }
 
-        let node = unsafe { &*ptr.cast::<mpv_node>() };
-        let list = unsafe { node.u.list };
+        let mpv_node = unsafe { *ptr.cast::<BorrowedMpvNode>() };
+        let list = unsafe { mpv_node.u.list };
         if list.is_null() {
             return Ok(vec![]);
         }
@@ -209,9 +210,12 @@ impl Format for Vec<Node> {
             return Ok(vec![]);
         }
 
-        let num = num.try_into().unwrap_or(0);
+        let num = cmp::min(num, i32::MAX) as usize;
         let values = unsafe { slice::from_raw_parts(values, num) };
-        let node_array = values.iter().map(Node::from).collect();
+        let node_array = values
+            .iter()
+            .map(|mpv_node| Node::from(BorrowedMpvNode(mpv_node)))
+            .collect();
 
         Ok(node_array)
     }

@@ -219,17 +219,17 @@ impl RawMpvNode {
             Node::None => {
                 mpv_node.format = mpv_format_MPV_FORMAT_NONE;
             }
-            Node::String(s) => {
+            Node::String(string) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_STRING;
-                mpv_node.u.string = CString::new(s).expect("CString::new failed").into_raw();
+                mpv_node.u.string = CString::new(string).expect("CString::new failed").into_raw();
             }
             Node::Int(int64) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_INT64;
                 mpv_node.u.int64 = int64;
             }
-            Node::Double(f) => {
+            Node::Double(float64) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_DOUBLE;
-                mpv_node.u.double_ = f;
+                mpv_node.u.double_ = float64;
             }
             Node::Bool(bool) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_FLAG;
@@ -243,9 +243,9 @@ impl RawMpvNode {
                 mpv_node.format = mpv_format_MPV_FORMAT_NODE_MAP;
                 mpv_node.u.list = mpv_node_list_from_node_map(node_map);
             }
-            Node::ByteArray(vec) => {
+            Node::ByteArray(byte_array) => {
                 mpv_node.format = mpv_format_MPV_FORMAT_BYTE_ARRAY;
-                mpv_node.u.ba = mpv_byte_array_from_byte_array(vec);
+                mpv_node.u.ba = mpv_byte_array_from_byte_array(byte_array);
             }
         }
 

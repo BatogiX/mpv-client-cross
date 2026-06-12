@@ -186,7 +186,7 @@ impl Format for Node {
 }
 
 impl Format for Vec<Node> {
-    const MPV_FORMAT: u32 = FormatType::NodeArray as u32;
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
 
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
@@ -197,7 +197,7 @@ impl Format for Vec<Node> {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
-        let mut mpv_node = RawMpvNode::from_node_array(self);
+        let mut mpv_node = RawMpvNode::from_node(Node::Array(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
@@ -205,6 +205,29 @@ impl Format for Vec<Node> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.to_node_array())
+    }
+}
+
+impl Format for HashMap<String, Node> {
+    const MPV_FORMAT: u32 = FormatType::Node as u32;
+
+    fn from_ptr(ptr: *const c_void) -> Self {
+        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
+            return Self::new();
+        };
+
+        mpv_node.to_node_map()
+    }
+
+    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+        let mut mpv_node = RawMpvNode::from_node(Node::Map(self));
+        fun(mpv_node.as_mut_ptr().cast::<c_void>())
+    }
+
+    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+        let mut mpv_node = ClonedMpvNode::default();
+        fun(mpv_node.as_mut_ptr().cast())?;
+        Ok(mpv_node.to_node_map())
     }
 }
 

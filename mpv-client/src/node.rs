@@ -151,13 +151,50 @@ pub trait MpvNode: Sized {
         }
 
         #[allow(clippy::cast_sign_loss)]
-        let num = cmp::min(num, i32::MAX) as usize;
+        let num = num as usize;
         let values = unsafe { slice::from_raw_parts(values, num) };
 
         values
             .iter()
             .map(|mpv_node| BorrowedMpvNode(mpv_node).to_node())
             .collect()
+    }
+
+    fn to_node_map(self) -> HashMap<String, Node> {
+        let mpv_node = self.as_ref();
+        let list = unsafe { mpv_node.u.list };
+        if list.is_null() {
+            return HashMap::new();
+        }
+
+        let list = unsafe { &*list };
+        let num = list.num;
+        let keys = list.keys;
+        let values = list.values;
+        if num <= 0 || values.is_null() || keys.is_null() {
+            log::error!("num <= 0 || values.is_null() || keys.is_null()");
+            log::error!("num: {num}, values: {values:#?}, keys: {keys:#?}");
+            return HashMap::new();
+        }
+
+        #[allow(clippy::cast_sign_loss)]
+        let num = num as usize;
+        let keys = unsafe { slice::from_raw_parts(keys, num) };
+        let values = unsafe { slice::from_raw_parts(values, num) };
+
+        let mut node_map = HashMap::with_capacity(num);
+        for (key, value) in keys.iter().zip(values) {
+            if key.is_null() {
+                log::error!("key.is_null()");
+                return HashMap::new();
+            }
+
+            let key = unsafe { CStr::from_ptr(*key) }.to_string_lossy().into_owned();
+            let value = BorrowedMpvNode(value).to_node();
+            node_map.insert(key, value);
+        }
+
+        node_map
     }
 }
 
@@ -273,10 +310,6 @@ impl RawMpvNode {
 
         Self(mpv_node)
     }
-
-    pub fn from_node_array(node_array: Vec<Node>) -> Self {
-        Self::from_node(Node::Array(node_array))
-    }
 }
 
 impl MpvNode for RawMpvNode {
@@ -362,9 +395,19 @@ impl Drop for RawMpvNode {
             }
         }
 
+        log::error!(
+            "dropping RawMpvNode: format: {:#?}, ba: {:#?}, double_: {:#?}, flag: {:#?}, int64: {:#?}, list: {:#?}, string: {:#?},",
+            self.0.format,
+            unsafe { self.0.u.ba },
+            unsafe { self.0.u.double_ },
+            unsafe { self.0.u.flag },
+            unsafe { self.0.u.int64 },
+            unsafe { self.0.u.list },
+            unsafe { self.0.u.string },
+        );
+
         let ptr = &raw mut self.0;
         unsafe { drop_mpv_node_contents(&mut *ptr) };
-        unsafe { drop(Box::from_raw(ptr)) }
     }
 }
 

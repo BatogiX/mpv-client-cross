@@ -1,5 +1,5 @@
 use crate::{
-    Handle, Result,
+    Handle,
     node::{BorrowedMpvNode, ClonedMpvNode, MpvNode as _, Node, RawMpvNode},
 };
 use mpv_client_sys::{
@@ -11,7 +11,7 @@ use mpv_client_sys::{
 use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
-    fmt::Display,
+    fmt::{self, Display},
     ptr,
 };
 
@@ -77,11 +77,11 @@ impl Sealed for () {
         Ok(())
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         fun(ptr::null_mut())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         fun(ptr::null_mut())?;
         Ok(())
     }
@@ -99,7 +99,7 @@ impl Sealed for String {
         Ok(unsafe { CStr::from_ptr(string_ptr) }.to_str()?.to_owned())
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let cstr = CString::new(self)?;
         let mut ptr = cstr.as_ptr();
         fun((&raw mut ptr).cast::<c_void>())
@@ -107,7 +107,7 @@ impl Sealed for String {
 
     /// # Errors
     /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut mpv_string_ptr: *mut c_char = ptr::null_mut();
         fun((&raw mut mpv_string_ptr).cast::<c_void>())?;
         let _mpv_string = ClonedMpvString(mpv_string_ptr);
@@ -127,13 +127,13 @@ impl Sealed for OsdString {
         Ok(Self(String::from_ptr(ptr)?))
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         String::to_mpv(self.0, fun)
     }
 
     /// # Errors
     /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         Ok(Self(String::from_mpv(fun)?))
     }
 }
@@ -143,12 +143,12 @@ impl Sealed for bool {
         Ok(unsafe { *ptr.cast::<i32>() != 0 })
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut data = c_int::from(self);
         fun((&raw mut data).cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut data = c_int::from(Self::default());
         fun((&raw mut data).cast::<c_void>()).map(|()| data != 0)
     }
@@ -159,12 +159,12 @@ impl Sealed for i64 {
         Ok(unsafe { *ptr.cast() })
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut data = self;
         fun((&raw mut data).cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut data = Self::default();
         fun((&raw mut data).cast::<c_void>()).map(|()| data)
     }
@@ -175,12 +175,12 @@ impl Sealed for f64 {
         Ok(unsafe { *ptr.cast() })
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut data = self;
         fun((&raw mut data).cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut data = Self::default();
         fun((&raw mut data).cast::<c_void>()).map(|()| data)
     }
@@ -195,12 +195,12 @@ impl Sealed for Node {
         mpv_node.to_node()
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut mpv_node = RawMpvNode::from_node(self);
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         mpv_node.to_node()
@@ -216,12 +216,12 @@ impl Sealed for Vec<Node> {
         mpv_node.to_node_array()
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut mpv_node = RawMpvNode::from_node(Node::Array(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         mpv_node.to_node_array()
@@ -237,12 +237,12 @@ impl Sealed for HashMap<String, Node> {
         mpv_node.to_node_map()
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut mpv_node = RawMpvNode::from_node(Node::Map(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         mpv_node.to_node_map()
@@ -258,12 +258,12 @@ impl Sealed for Vec<u8> {
         Ok(mpv_node.to_node_byte_array())
     }
 
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
         let mut mpv_node = RawMpvNode::from_node(Node::ByteArray(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.to_node_byte_array())
@@ -295,7 +295,7 @@ pub enum FormatType {
 impl TryFrom<u32> for FormatType {
     type Error = crate::Error;
 
-    fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             mpv_format_MPV_FORMAT_NONE => Ok(Self::None),
             mpv_format_MPV_FORMAT_STRING => Ok(Self::String),
@@ -313,7 +313,7 @@ impl TryFrom<u32> for FormatType {
 }
 
 impl Display for FormatType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::None => f.write_str("None"),
             Self::String => f.write_str("String"),

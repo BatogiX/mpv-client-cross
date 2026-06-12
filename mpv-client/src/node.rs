@@ -46,108 +46,117 @@ impl Display for Node {
 pub trait MpvNode: Sized {
     fn as_ref(&self) -> BorrowedMpvNode<'_>;
     fn as_mut_ptr(&mut self) -> *mut mpv_node;
-    fn to_node(self) -> Node {
+    fn to_node(self) -> crate::Result<Node> {
         let mpv_node = self.as_ref();
-        unsafe {
-            match mpv_node.format {
-                mpv_format_MPV_FORMAT_STRING => {
-                    if mpv_node.u.string.is_null() {
-                        Node::None
-                    } else {
-                        Node::String(CStr::from_ptr(mpv_node.u.string).to_string_lossy().into_owned())
-                    }
+        let node = match FormatType::try_from(mpv_node.format)? {
+            FormatType::String => {
+                let string = unsafe { mpv_node.u.string };
+                if string.is_null() {
+                    Node::None
+                } else {
+                    Node::String(unsafe { CStr::from_ptr(string) }.to_string_lossy().into_owned())
                 }
-                mpv_format_MPV_FORMAT_INT64 => Node::Int(mpv_node.u.int64),
-                mpv_format_MPV_FORMAT_DOUBLE => Node::Double(mpv_node.u.double_),
-                mpv_format_MPV_FORMAT_FLAG => Node::Bool(mpv_node.u.flag != 0),
-                mpv_format_MPV_FORMAT_NODE_ARRAY => {
-                    if mpv_node.u.list.is_null() {
-                        return Node::Array(Vec::new());
-                    }
-
-                    let list = &*mpv_node.u.list;
-                    let len: usize = list.num.try_into().expect("num fits in usize");
-
-                    let values = if len == 0 || list.values.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(list.values, len)
-                    };
-
-                    Node::Array(
-                        values
-                            .iter()
-                            .map(|raw_node| BorrowedMpvNode(raw_node).to_node())
-                            .collect(),
-                    )
-                }
-                mpv_format_MPV_FORMAT_NODE_MAP => {
-                    if mpv_node.u.list.is_null() {
-                        return Node::Map(HashMap::new());
-                    }
-
-                    let list = &*mpv_node.u.list;
-                    let len: usize = list.num.try_into().expect("num fits in usize");
-
-                    let values = if len == 0 || list.values.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(list.values, len)
-                    };
-
-                    let keys = if len == 0 || list.keys.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(list.keys, len)
-                    };
-
-                    let map = keys
-                        .iter()
-                        .zip(values.iter())
-                        .filter_map(|(&k, v)| {
-                            if k.is_null() {
-                                None
-                            } else {
-                                let key = CStr::from_ptr(k).to_string_lossy().into_owned();
-                                (key, BorrowedMpvNode(v).to_node()).into()
-                            }
-                        })
-                        .collect();
-
-                    Node::Map(map)
-                }
-                mpv_format_MPV_FORMAT_BYTE_ARRAY => {
-                    if mpv_node.u.ba.is_null() {
-                        return Node::ByteArray(Vec::new());
-                    }
-
-                    let arr: &mpv_byte_array = &*mpv_node.u.ba;
-
-                    let data = if arr.size == 0 || arr.data.is_null() {
-                        &[]
-                    } else {
-                        slice::from_raw_parts(arr.data as *const u8, arr.size)
-                    };
-
-                    Node::ByteArray(data.to_vec())
-                }
-                _ => Node::None,
             }
-        }
+            FormatType::Int => Node::Int(unsafe { mpv_node.u.int64 }),
+            FormatType::Double => Node::Double(unsafe { mpv_node.u.double_ }),
+            FormatType::Bool => Node::Bool(unsafe { mpv_node.u.flag } != 0),
+            FormatType::NodeArray => {
+                let list = unsafe { mpv_node.u.list };
+                if list.is_null() {
+                    return Ok(Node::Array(Vec::default()));
+                }
+
+                let list = unsafe { &*list };
+                let len: usize = list.num.try_into().expect("num fits in usize");
+
+                let values = list.values;
+                let values = if len == 0 || values.is_null() {
+                    &[]
+                } else {
+                    unsafe { slice::from_raw_parts(values, len) }
+                };
+
+                Node::Array(
+                    values
+                        .iter()
+                        .map(|raw_node| BorrowedMpvNode(raw_node).to_node())
+                        .collect::<crate::Result<Vec<Node>>>()?,
+                )
+            }
+            FormatType::NodeMap => {
+                let list = unsafe { mpv_node.u.list };
+                if list.is_null() {
+                    return Ok(Node::Map(HashMap::default()));
+                }
+
+                let list = unsafe { &*mpv_node.u.list };
+                let len: usize = list.num.try_into().expect("num fits in usize");
+
+                let values = list.values;
+                let values = if len == 0 || values.is_null() {
+                    &[]
+                } else {
+                    unsafe { slice::from_raw_parts(values, len) }
+                };
+
+                let keys = list.keys;
+                let keys = if len == 0 || keys.is_null() {
+                    &[]
+                } else {
+                    unsafe { slice::from_raw_parts(keys, len) }
+                };
+
+                let map = keys
+                    .iter()
+                    .zip(values.iter())
+                    .filter_map(|(&k, v)| {
+                        if k.is_null() {
+                            None
+                        } else {
+                            let key = unsafe { CStr::from_ptr(k) }.to_string_lossy().into_owned();
+                            Some(BorrowedMpvNode(v).to_node().map(|node| (key, node)))
+                        }
+                    })
+                    .collect::<crate::Result<HashMap<String, Node>>>()?;
+
+                Node::Map(map)
+            }
+            FormatType::ByteArray => {
+                let ba = unsafe { mpv_node.u.ba };
+                if ba.is_null() {
+                    return Ok(Node::ByteArray(Vec::default()));
+                }
+
+                let ba = unsafe { &*mpv_node.u.ba };
+                let size = ba.size;
+
+                let data = ba.data;
+                let data = if size == 0 || data.is_null() {
+                    &[]
+                } else {
+                    unsafe { slice::from_raw_parts(data.cast(), size) }
+                };
+
+                Node::ByteArray(data.to_vec())
+            }
+            _ => Node::None,
+        };
+
+        Ok(node)
     }
 
-    fn to_node_array(self) -> Vec<Node> {
+    fn to_node_array(self) -> crate::Result<Vec<Node>> {
         let mpv_node = self.as_ref();
         let list = unsafe { mpv_node.u.list };
         if list.is_null() {
-            return vec![];
+            return Ok(Vec::default());
         }
 
         let list = unsafe { &*list };
         let num = list.num;
         let values = list.values;
         if num <= 0 || values.is_null() {
-            return vec![];
+            return Ok(Vec::default());
         }
 
         #[allow(clippy::cast_sign_loss)]
@@ -157,14 +166,14 @@ pub trait MpvNode: Sized {
         values
             .iter()
             .map(|mpv_node| BorrowedMpvNode(mpv_node).to_node())
-            .collect()
+            .collect::<crate::Result<Vec<Node>>>()
     }
 
-    fn to_node_map(self) -> HashMap<String, Node> {
+    fn to_node_map(self) -> crate::Result<HashMap<String, Node>> {
         let mpv_node = self.as_ref();
         let list = unsafe { mpv_node.u.list };
         if list.is_null() {
-            return HashMap::new();
+            return Ok(HashMap::default());
         }
 
         let list = unsafe { &*list };
@@ -172,7 +181,7 @@ pub trait MpvNode: Sized {
         let keys = list.keys;
         let values = list.values;
         if num <= 0 || values.is_null() || keys.is_null() {
-            return HashMap::new();
+            return Ok(HashMap::default());
         }
 
         #[allow(clippy::cast_sign_loss)]
@@ -183,28 +192,28 @@ pub trait MpvNode: Sized {
         let mut node_map = HashMap::with_capacity(num);
         for (key, value) in keys.iter().zip(values) {
             if key.is_null() {
-                return HashMap::new();
+                return Ok(HashMap::default());
             }
 
             let key = unsafe { CStr::from_ptr(*key) }.to_string_lossy().into_owned();
-            let value = BorrowedMpvNode(value).to_node();
+            let value = BorrowedMpvNode(value).to_node()?;
             node_map.insert(key, value);
         }
 
-        node_map
+        Ok(node_map)
     }
 
     fn to_node_byte_array(self) -> Vec<u8> {
         let mpv_node = self.as_ref();
         let ba = unsafe { mpv_node.u.ba };
         if ba.is_null() {
-            return vec![];
+            return Vec::default();
         }
 
         let ba = unsafe { &*ba };
         let data = ba.data;
         if data.is_null() {
-            return vec![];
+            return Vec::default();
         }
 
         let size = ba.size;

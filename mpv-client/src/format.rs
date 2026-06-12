@@ -60,20 +60,22 @@ impl Format for Vec<u8> {
     const MPV_FORMAT: u32 = FormatType::Node as u32;
 }
 
-pub trait Sealed: Sized {
-    fn from_ptr(ptr: *const c_void) -> Self;
+pub trait Sealed: Sized + Default {
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self>;
 
     /// # Errors
     /// If the FFI callback fails.
-    fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()>;
+    fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()>;
 
     /// # Errors
     /// If the FFI callback fails or the stored value cannot be recovered.
-    fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self>;
+    fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self>;
 }
 
 impl Sealed for () {
-    fn from_ptr(_ptr: *const c_void) -> Self {}
+    fn from_ptr(_ptr: *const c_void) -> crate::Result<Self> {
+        Ok(())
+    }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
         fun(ptr::null_mut())
@@ -86,15 +88,15 @@ impl Sealed for () {
 }
 
 impl Sealed for String {
-    fn from_ptr(ptr: *const c_void) -> Self {
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
         let ptr = ptr.cast::<*const c_char>();
         let string_ptr = unsafe { *ptr };
 
         if string_ptr.is_null() {
-            return Self::new();
+            return Ok(Self::default());
         }
 
-        unsafe { CStr::from_ptr(string_ptr) }.to_string_lossy().into_owned()
+        Ok(unsafe { CStr::from_ptr(string_ptr) }.to_str()?.to_owned())
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -111,20 +113,18 @@ impl Sealed for String {
         let _mpv_string = ClonedMpvString(mpv_string_ptr);
 
         if mpv_string_ptr.is_null() {
-            return Ok(Self::new());
+            return Ok(Self::default());
         }
 
-        let string = unsafe { CStr::from_ptr(mpv_string_ptr) }
-            .to_str()
-            .map(ToOwned::to_owned)?;
+        let string = unsafe { CStr::from_ptr(mpv_string_ptr) }.to_string_lossy().into_owned();
 
         Ok(string)
     }
 }
 
 impl Sealed for OsdString {
-    fn from_ptr(ptr: *const c_void) -> Self {
-        Self(String::from_ptr(ptr))
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
+        Ok(Self(String::from_ptr(ptr)?))
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -139,8 +139,8 @@ impl Sealed for OsdString {
 }
 
 impl Sealed for bool {
-    fn from_ptr(ptr: *const c_void) -> Self {
-        unsafe { *ptr.cast::<i32>() != 0 }
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
+        Ok(unsafe { *ptr.cast::<i32>() != 0 })
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -155,8 +155,8 @@ impl Sealed for bool {
 }
 
 impl Sealed for i64 {
-    fn from_ptr(ptr: *const c_void) -> Self {
-        unsafe { *ptr.cast() }
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
+        Ok(unsafe { *ptr.cast() })
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -171,8 +171,8 @@ impl Sealed for i64 {
 }
 
 impl Sealed for f64 {
-    fn from_ptr(ptr: *const c_void) -> Self {
-        unsafe { *ptr.cast() }
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
+        Ok(unsafe { *ptr.cast() })
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {
@@ -187,9 +187,9 @@ impl Sealed for f64 {
 }
 
 impl Sealed for Node {
-    fn from_ptr(ptr: *const c_void) -> Self {
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
-            return Self::None;
+            return Ok(Self::None);
         };
 
         mpv_node.to_node()
@@ -203,14 +203,14 @@ impl Sealed for Node {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
-        Ok(mpv_node.to_node())
+        mpv_node.to_node()
     }
 }
 
 impl Sealed for Vec<Node> {
-    fn from_ptr(ptr: *const c_void) -> Self {
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
-            return vec![];
+            return Ok(Vec::default());
         };
 
         mpv_node.to_node_array()
@@ -224,14 +224,14 @@ impl Sealed for Vec<Node> {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
-        Ok(mpv_node.to_node_array())
+        mpv_node.to_node_array()
     }
 }
 
 impl Sealed for HashMap<String, Node> {
-    fn from_ptr(ptr: *const c_void) -> Self {
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
-            return Self::new();
+            return Ok(Self::default());
         };
 
         mpv_node.to_node_map()
@@ -245,17 +245,17 @@ impl Sealed for HashMap<String, Node> {
     fn from_mpv<F: Fn(*mut c_void) -> Result<()>>(fun: F) -> Result<Self> {
         let mut mpv_node = ClonedMpvNode::default();
         fun(mpv_node.as_mut_ptr().cast())?;
-        Ok(mpv_node.to_node_map())
+        mpv_node.to_node_map()
     }
 }
 
 impl Sealed for Vec<u8> {
-    fn from_ptr(ptr: *const c_void) -> Self {
+    fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
-            return Self::new();
+            return Ok(Self::default());
         };
 
-        mpv_node.to_node_byte_array()
+        Ok(mpv_node.to_node_byte_array())
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> Result<()>>(self, fun: F) -> Result<()> {

@@ -1153,7 +1153,7 @@ impl Property<'_> {
     pub fn data<T: Format>(&self) -> Option<T> {
         unsafe {
             if self.format() == T::MPV_FORMAT {
-                Some(T::from_ptr((*self.0).data))
+                T::from_ptr((*self.0).data).ok()
             } else {
                 None
             }

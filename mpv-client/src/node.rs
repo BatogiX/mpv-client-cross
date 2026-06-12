@@ -202,7 +202,7 @@ pub trait MpvNode: Sized {
 /// Created by libmpv.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct BorrowedMpvNode<'a>(pub &'a mpv_node);
+pub struct BorrowedMpvNode<'a>(&'a mpv_node);
 
 impl BorrowedMpvNode<'_> {
     pub const fn from_ptr(ptr: *const c_void) -> Option<Self> {
@@ -235,7 +235,7 @@ impl MpvNode for BorrowedMpvNode<'_> {
 /// Must be cleaned on drop via [`free_node_contents()`](Handle::free_node_contents()).
 /// Created by libmpv.
 #[repr(transparent)]
-pub struct ClonedMpvNode(pub mpv_node);
+pub struct ClonedMpvNode(mpv_node);
 
 impl Default for ClonedMpvNode {
     fn default() -> Self {
@@ -445,13 +445,13 @@ fn mpv_node_list_from_node_map(node_map: HashMap<String, Node>) -> *mut mpv_node
         }));
     }
 
-    let (keys, values): (Vec<*mut i8>, Vec<mpv_node>) = node_map
+    let (keys, values): (Vec<*mut i8>, Vec<RawMpvNode>) = node_map
         .into_iter()
         .take(num as usize)
         .map(|(key, node)| {
             (
                 CString::new(key).expect("CString::new() failed").into_raw(),
-                RawMpvNode::from_node(node).0,
+                RawMpvNode::from_node(node),
             )
         })
         .collect();
@@ -460,6 +460,8 @@ fn mpv_node_list_from_node_map(node_map: HashMap<String, Node>) -> *mut mpv_node
         Box::into_raw(keys.into_boxed_slice()).cast(),
         Box::into_raw(values.into_boxed_slice()).cast(),
     );
+
+    log::error!("keys and values created");
 
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }

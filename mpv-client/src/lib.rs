@@ -449,8 +449,37 @@ impl Handle {
         }
     }
 
+    /// Sets a property to a given value.
+    ///
+    /// Properties are variables that can be altered at runtime to control the player.
+    /// For example, setting the `"pause"` property will pause or unpause playback.
+    ///
+    /// # Data Conversion
+    ///
+    /// If the requested `T::MPV_FORMAT` does not strictly match the internal format of the
+    /// property, `libmpv` will attempt automatic type coercion where possible:
+    /// * `MPV_FORMAT_INT64` values are automatically converted to `MPV_FORMAT_DOUBLE`.
+    /// * `MPV_FORMAT_STRING` values typically invoke an internal string parser.
+    /// * Failing a fallback conversion, the operation will fail with `MPV_ERROR_PROPERTY_FORMAT`.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The property name. See `input.rst` for a list of available properties.
+    /// * `data` - The value to assign, passed as any type implementing [`Format`].
+    ///
     /// # Errors
-    /// Returns an mpv error if the property cannot be set.
+    ///
+    /// Returns a [`crate::Error`] if:
+    /// * The property name contains an internal null byte.
+    /// * The format parameter is incompatible with the target property type.
+    /// * The property is modified before initialization but is not backed by an option
+    ///   (`MPV_ERROR_PROPERTY_UNAVAILABLE`).
+    /// * The underlying `mpv_set_property` call returns any other negative error code.
+    ///
+    /// # Notes
+    ///
+    /// This function can also be used to configure global initialization options
+    /// *before* the instance is explicitly initialized via `mpv_initialize()`.
     pub fn set_property<T: Format>(&self, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
@@ -537,8 +566,49 @@ impl Handle {
         unsafe { result!(mpv_get_property_async(handle, reply, name.as_ptr(), T::MPV_FORMAT)) }
     }
 
+    /// Registers a notification callback to trigger whenever the given property changes.
+    ///
+    /// You will receive updates asynchronously as `MPV_EVENT_PROPERTY_CHANGE` events.
+    ///
+    /// # Behavior & Performance
+    ///
+    /// * **Coalescing:** Property changes are coalesced. Change events are only
+    ///   returned once the internal event queue becomes empty, yielding exactly
+    ///   one event per changed property.
+    /// * **Initial Value:** You will always receive an immediate initial change
+    ///   notification. This is intended to initialize your application state
+    ///   with the current property value.
+    /// * **Precision:** This mechanism is not perfectly precise for all properties.
+    ///   For highly active or dynamic properties (such as `"clock"`), update frequency
+    ///   might not reflect every localized state change.
+    ///
+    /// # Arguments
+    ///
+    /// * `reply` - An identifier mapping directly to `mpv_event.reply_userdata`
+    ///   on the received event payload. Pass `0` if unused. See also [`Self::unobserve_property`].
+    /// * `name` - The property name. Observing a non-existent property name is
+    ///   allowed but may emit sporadic change events.
+    ///
     /// # Errors
-    /// Returns an mpv error if property observation fails.
+    ///
+    /// Returns a [`crate::Error`] if:
+    /// * The property name contains an internal null byte.
+    /// * The `Format` type parameter mapping `T::MPV_FORMAT` is unsupported by `libmpv`.
+    /// * Memory allocation fails (`MPV_ERROR_NOMEM`).
+    ///
+    /// # Warnings
+    ///
+    /// * **Feedback Loops:** You will receive change notifications even if you mutate
+    ///   the property yourself from this handle. Take precautions to prevent infinite
+    ///   cascading feedback loops.
+    /// * **Error Fallback:** If a property becomes unavailable or errors out during extraction,
+    ///   the emitted event format drops to `MPV_FORMAT_NONE` regardless of `T`, rendering the
+    ///   underlying event data pointer invalid.
+    ///
+    /// # Notes
+    ///
+    /// Only the specific [`Handle`] that registers this observation will receive the
+    /// resulting change events or be permitted to unobserve them.
     pub fn observe_property<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
         let name = CString::new(name.into())?;
         unsafe {
@@ -609,8 +679,23 @@ impl Handle {
         unsafe { result!(mpv_hook_add(self.as_ptr().cast_mut(), reply, name.as_ptr(), priority)) }
     }
 
+    /// Responds to an `MPV_EVENT_HOOK` event.
+    ///
+    /// You must call this after you have handled the hook event. There is no way
+    /// to "cancel" or "stop" a hook.
+    ///
+    /// Calling this will typically unblock the player for whatever the hook is
+    /// responsible for (e.g., for the `"on_load"` hook, it allows it to continue
+    /// playback).
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - This must be the value of the `mpv_event_hook.id` field from the
+    ///   corresponding `MPV_EVENT_HOOK` event.
+    ///
     /// # Errors
-    /// Returns an mpv error if hook continuation fails.
+    ///
+    /// Returns an error if the underlying `mpv_hook_continue` call fails.
     pub fn hook_continue(&self, id: u64) -> Result<()> {
         unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
     }
@@ -640,6 +725,24 @@ impl Handle {
         unsafe { u64::from(mpv_client_api_version()) }
     }
 
+    /// Returns a string describing the error.
+    ///
+    /// For unknown errors, the string `"unknown error"` is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The error number corresponding to an `mpv_error`.
+    ///
+    /// # Returns
+    ///
+    /// A static string slice (`&'static str`) describing the error. The string is
+    /// completely static (managed by `libmpv`), does not need to be deallocated,
+    /// and remains valid for the lifetime of the program.
+    ///
+    /// # Notes
+    ///
+    /// If the string returned by `libmpv` is not valid UTF-8, this function safely
+    /// falls back to returning `"unknown error"`.
     #[must_use]
     pub fn error_string(error: i32) -> &'static str {
         unsafe {
@@ -831,15 +934,27 @@ impl Handle {
         unsafe { mpv_wakeup(self.as_ptr().cast_mut()) }
     }
 
-    pub fn set_wakeup_callback(&self) {
+    pub fn set_wakeup_callback(&mut self) {
         // mpv_set_wakeup_callback()
         unimplemented!()
     }
 
-    pub fn wait_async_requests(&mut self) {
+    pub fn wait_async_requests(&self) {
         unsafe { mpv_wait_async_requests(self.as_mut_ptr()) }
     }
 
+    /// Convenience function to delete a property.
+    ///
+    /// This is equivalent to running the command `"del [name]"`.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The property name. See `input.rst` for a list of properties.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`Error`](`crate::Error`) if the property name contains an internal null byte,
+    /// or if the underlying `mpv` call returns an error code.
     pub fn del_property(&self, name: impl Into<Vec<u8>>) -> crate::Result<()> {
         let name = CString::new(name.into())?;
         result!(unsafe { mpv_del_property(self.as_mut_ptr(), name.as_ptr()) })

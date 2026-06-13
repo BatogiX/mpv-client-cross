@@ -1412,11 +1412,11 @@ impl LogLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum EndFileReason {
-    Eof = 0,
-    Stop = 2,
-    Quit = 3,
-    Error = 4,
-    Redirect = 5,
+    Eof = mpv_end_file_reason_MPV_END_FILE_REASON_EOF,
+    Stop = mpv_end_file_reason_MPV_END_FILE_REASON_STOP,
+    Quit = mpv_end_file_reason_MPV_END_FILE_REASON_QUIT,
+    Error = mpv_end_file_reason_MPV_END_FILE_REASON_ERROR,
+    Redirect = mpv_end_file_reason_MPV_END_FILE_REASON_REDIRECT,
     Unknown(u32),
 }
 

@@ -22,17 +22,18 @@ use mpv_client_sys::{
     mpv_end_file_reason_MPV_END_FILE_REASON_EOF, mpv_end_file_reason_MPV_END_FILE_REASON_ERROR,
     mpv_end_file_reason_MPV_END_FILE_REASON_QUIT, mpv_end_file_reason_MPV_END_FILE_REASON_REDIRECT,
     mpv_end_file_reason_MPV_END_FILE_REASON_STOP, mpv_error_string, mpv_event, mpv_event_client_message,
-    mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
-    mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED,
-    mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE,
-    mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
-    mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
-    mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
-    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_format_MPV_FORMAT_NONE,
-    mpv_free, mpv_free_node_contents, mpv_get_property, mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us,
-    mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node, mpv_observe_property,
-    mpv_request_event, mpv_request_log_messages, mpv_set_property, mpv_set_property_async, mpv_set_wakeup_callback,
-    mpv_unobserve_property, mpv_wait_async_requests, mpv_wait_event, mpv_wakeup,
+    mpv_event_command, mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
+    mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE,
+    mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK,
+    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
+    mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
+    mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
+    mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
+    mpv_event_start_file, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_get_property,
+    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
+    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
+    mpv_set_property, mpv_set_property_async, mpv_set_wakeup_callback, mpv_unobserve_property, mpv_wait_async_requests,
+    mpv_wait_event, mpv_wakeup,
 };
 pub use node::Node;
 use serde::de::{self, DeserializeOwned};
@@ -81,7 +82,7 @@ pub enum Event<'h> {
     /// (Unlike [`Event::GetPropertyReply`], [`Property`] is not used.)
     SetPropertyReply(Result<()>, u64),
     /// Reply to a [`Handle::command_async`] or [`mpv_client_sys::mpv_command_node_async()`] request.
-    CommandReply(Result<()>, u64),
+    CommandReply(Result<()>, u64, Command<'h>),
     /// Notification before playback start of a file (before the file is loaded).
     /// See also [`StartFile`].
     StartFile(StartFile<'h>),
@@ -153,6 +154,9 @@ pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Ha
 
 /// Data associated with [`Event::Hook`].
 pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
+
+/// Data associated with [`Event::CommandReply`].
+pub struct Command<'h>(*const mpv_event_command, PhantomData<&'h Handle>);
 
 macro_rules! result {
     ($f:expr) => {{
@@ -1187,45 +1191,46 @@ impl UninitializedClient {
 }
 
 impl Event<'_> {
-    unsafe fn from_ptr(event: *const mpv_event) -> Self {
+    fn from_ptr(event: *const mpv_event) -> Self {
         if event.is_null() {
             return Self::None;
         }
 
-        unsafe {
-            match (*event).event_id {
-                mpv_event_id_MPV_EVENT_SHUTDOWN => Self::Shutdown,
-                mpv_event_id_MPV_EVENT_LOG_MESSAGE => Self::LogMessage(LogMessage::from_ptr((*event).data)),
-                mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY => {
-                    let err = result!((*event).error);
-                    let prop = if (*event).data.is_null() {
-                        None
-                    } else {
-                        Some(Property::from_ptr((*event).data))
-                    };
-                    Self::GetPropertyReply(err, (*event).reply_userdata, prop)
-                }
-                mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY => {
-                    Self::SetPropertyReply(result!((*event).error), (*event).reply_userdata)
-                }
-                mpv_event_id_MPV_EVENT_COMMAND_REPLY => {
-                    Self::CommandReply(result!((*event).error), (*event).reply_userdata)
-                }
-                mpv_event_id_MPV_EVENT_START_FILE => Self::StartFile(StartFile::from_ptr((*event).data)),
-                mpv_event_id_MPV_EVENT_END_FILE => Self::EndFile(EndFile::from_ptr((*event).data)),
-                mpv_event_id_MPV_EVENT_FILE_LOADED => Self::FileLoaded,
-                mpv_event_id_MPV_EVENT_CLIENT_MESSAGE => Self::ClientMessage(ClientMessage::from_ptr((*event).data)),
-                mpv_event_id_MPV_EVENT_VIDEO_RECONFIG => Self::VideoReconfig,
-                mpv_event_id_MPV_EVENT_AUDIO_RECONFIG => Self::AudioReconfig,
-                mpv_event_id_MPV_EVENT_SEEK => Self::Seek,
-                mpv_event_id_MPV_EVENT_PLAYBACK_RESTART => Self::PlaybackRestart,
-                mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
-                    Self::PropertyChange((*event).reply_userdata, Property::from_ptr((*event).data))
-                }
-                mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW => Self::QueueOverflow,
-                mpv_event_id_MPV_EVENT_HOOK => Self::Hook((*event).reply_userdata, Hook::from_ptr((*event).data)),
-                _ => Self::None,
+        let event = unsafe { *event };
+        match event.event_id {
+            mpv_event_id_MPV_EVENT_SHUTDOWN => Self::Shutdown,
+            mpv_event_id_MPV_EVENT_LOG_MESSAGE => Self::LogMessage(LogMessage::from_ptr(event.data)),
+            mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY => {
+                let err = result!(event.error);
+                let prop = if event.data.is_null() {
+                    None
+                } else {
+                    Some(Property::from_ptr(event.data))
+                };
+                Self::GetPropertyReply(err, event.reply_userdata, prop)
             }
+            mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY => {
+                Self::SetPropertyReply(result!(event.error), event.reply_userdata)
+            }
+            mpv_event_id_MPV_EVENT_COMMAND_REPLY => Self::CommandReply(
+                result!(event.error),
+                event.reply_userdata,
+                Command::from_ptr(event.data),
+            ),
+            mpv_event_id_MPV_EVENT_START_FILE => Self::StartFile(StartFile::from_ptr(event.data)),
+            mpv_event_id_MPV_EVENT_END_FILE => Self::EndFile(EndFile::from_ptr(event.data)),
+            mpv_event_id_MPV_EVENT_FILE_LOADED => Self::FileLoaded,
+            mpv_event_id_MPV_EVENT_CLIENT_MESSAGE => Self::ClientMessage(ClientMessage::from_ptr(event.data)),
+            mpv_event_id_MPV_EVENT_VIDEO_RECONFIG => Self::VideoReconfig,
+            mpv_event_id_MPV_EVENT_AUDIO_RECONFIG => Self::AudioReconfig,
+            mpv_event_id_MPV_EVENT_SEEK => Self::Seek,
+            mpv_event_id_MPV_EVENT_PLAYBACK_RESTART => Self::PlaybackRestart,
+            mpv_event_id_MPV_EVENT_PROPERTY_CHANGE => {
+                Self::PropertyChange(event.reply_userdata, Property::from_ptr(event.data))
+            }
+            mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW => Self::QueueOverflow,
+            mpv_event_id_MPV_EVENT_HOOK => Self::Hook(event.reply_userdata, Hook::from_ptr(event.data)),
+            _ => Self::None,
         }
     }
 }
@@ -1490,6 +1495,15 @@ impl<'h> Hook<'h> {
 impl fmt::Display for Hook<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+impl Command<'_> {
+    /// Wrap a raw [`mpv_event_command`]
+    /// The pointer must not be null
+    fn from_ptr(ptr: *const c_void) -> Self {
+        assert!(!ptr.is_null());
+        Self(ptr.cast::<mpv_event_command>(), PhantomData)
     }
 }
 

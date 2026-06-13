@@ -138,24 +138,31 @@ pub enum Event<'h> {
 
 /// Data associated with [`Event::GetPropertyReply`] and [`Event::PropertyChange`].
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::LogMessage`].
+#[repr(transparent)]
 pub struct LogMessage<'h>(*const mpv_event_log_message, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::StartFile`].
+#[repr(transparent)]
 pub struct StartFile<'h>(*const mpv_event_start_file, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::EndFile`].
+#[repr(transparent)]
 pub struct EndFile<'h>(*const mpv_event_end_file, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::ClientMessage`].
+#[repr(transparent)]
 pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::Hook`].
+#[repr(transparent)]
 pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
 
 /// Data associated with [`Event::CommandReply`].
+#[repr(transparent)]
 pub struct Command<'h>(*const mpv_event_command, PhantomData<&'h Handle>);
 
 macro_rules! result {
@@ -1240,21 +1247,21 @@ impl fmt::Display for Event<'_> {
         let event_name = Handle::event_name(u32::from(self)).unwrap_or("unknown");
         match self {
             Event::None => Ok(()),
-            Event::LogMessage(msg) => write!(f, "{event_name}: {msg}"),
-            Event::GetPropertyReply(.., property) => {
+            Event::LogMessage(log_message) => write!(f, "{event_name}: {log_message}"),
+            Event::GetPropertyReply(_error, _reply, property) => {
                 if let Some(property) = property {
                     write!(f, "{event_name}: {property}")
                 } else {
                     write!(f, "{event_name}: {property:?}")
                 }
             }
-            // Event::SetPropertyReply(_, _) => todo!(),
-            // Event::CommandReply(_, _) => todo!(),
-            // Event::StartFile(start_file) => todo!(),
-            // Event::EndFile(end_file) => todo!(),
-            // Event::ClientMessage(client_message) => todo!(),
-            Event::PropertyChange(_, property) => write!(f, "{event_name}: {property}"),
-            // Event::Hook(_, hook) => todo!(),
+            Event::SetPropertyReply(_error, _reply) => todo!(),
+            Event::CommandReply(_error, _reply, _command) => todo!(),
+            Event::StartFile(start_file) => write!(f, "{event_name}: {start_file}"),
+            Event::EndFile(end_file) => write!(f, "{event_name}: {end_file}"),
+            Event::ClientMessage(client_message) => write!(f, "{event_name}: {client_message}"),
+            Event::PropertyChange(_reply, property) => write!(f, "{event_name}: {property}"),
+            Event::Hook(_reply, hook) => todo!(),
             _ => f.write_str(event_name),
         }
     }

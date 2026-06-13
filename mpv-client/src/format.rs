@@ -9,10 +9,14 @@ use mpv_client_sys::{
     mpv_format_MPV_FORMAT_STRING,
 };
 use std::{
+    borrow::Borrow,
     collections::HashMap,
+    convert,
     ffi::{CStr, CString, c_char, c_int, c_void},
     fmt::{self, Display},
+    ops::{Deref, DerefMut},
     ptr,
+    str::FromStr,
 };
 
 #[allow(private_bounds)]
@@ -331,3 +335,49 @@ impl Display for FormatType {
 
 #[derive(Debug, Default)]
 pub struct OsdString(pub String);
+
+impl Deref for OsdString {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for OsdString {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl AsRef<str> for OsdString {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for OsdString {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for OsdString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl<T: Into<String>> From<T> for OsdString {
+    fn from(value: T) -> Self {
+        Self(value.into())
+    }
+}
+
+impl FromStr for OsdString {
+    type Err = convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_owned()))
+    }
+}

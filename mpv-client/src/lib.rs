@@ -18,18 +18,21 @@ pub use format::{Format, OsdString};
 pub use mpv_client_sys::mpv_handle;
 use mpv_client_sys::{
     mpv_abort_async_command, mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async,
-    mpv_command_ret, mpv_create, mpv_create_client, mpv_create_weak_client, mpv_destroy, mpv_error_string, mpv_event,
-    mpv_event_client_message, mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG,
-    mpv_event_id_MPV_EVENT_CLIENT_MESSAGE, mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE,
-    mpv_event_id_MPV_EVENT_FILE_LOADED, mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK,
-    mpv_event_id_MPV_EVENT_LOG_MESSAGE, mpv_event_id_MPV_EVENT_PLAYBACK_RESTART,
-    mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
-    mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
-    mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
-    mpv_event_start_file, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_get_property,
-    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
-    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
-    mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_event, mpv_wakeup,
+    mpv_command_ret, mpv_create, mpv_create_client, mpv_create_weak_client, mpv_del_property, mpv_destroy,
+    mpv_end_file_reason_MPV_END_FILE_REASON_EOF, mpv_end_file_reason_MPV_END_FILE_REASON_ERROR,
+    mpv_end_file_reason_MPV_END_FILE_REASON_QUIT, mpv_end_file_reason_MPV_END_FILE_REASON_REDIRECT,
+    mpv_end_file_reason_MPV_END_FILE_REASON_STOP, mpv_error_string, mpv_event, mpv_event_client_message,
+    mpv_event_end_file, mpv_event_hook, mpv_event_id_MPV_EVENT_AUDIO_RECONFIG, mpv_event_id_MPV_EVENT_CLIENT_MESSAGE,
+    mpv_event_id_MPV_EVENT_COMMAND_REPLY, mpv_event_id_MPV_EVENT_END_FILE, mpv_event_id_MPV_EVENT_FILE_LOADED,
+    mpv_event_id_MPV_EVENT_GET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_HOOK, mpv_event_id_MPV_EVENT_LOG_MESSAGE,
+    mpv_event_id_MPV_EVENT_PLAYBACK_RESTART, mpv_event_id_MPV_EVENT_PROPERTY_CHANGE,
+    mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK, mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY,
+    mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE, mpv_event_id_MPV_EVENT_VIDEO_RECONFIG,
+    mpv_event_log_message, mpv_event_name, mpv_event_property, mpv_event_start_file, mpv_format_MPV_FORMAT_NONE,
+    mpv_free, mpv_free_node_contents, mpv_get_property, mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us,
+    mpv_hook_add, mpv_hook_continue, mpv_initialize, mpv_load_config_file, mpv_node, mpv_observe_property,
+    mpv_request_event, mpv_request_log_messages, mpv_set_property, mpv_set_property_async, mpv_set_wakeup_callback,
+    mpv_unobserve_property, mpv_wait_async_requests, mpv_wait_event, mpv_wakeup,
 };
 pub use node::Node;
 use serde::de::{self, DeserializeOwned};
@@ -808,8 +811,8 @@ impl Handle {
     ///
     /// Returns an error if the underlying [`mpv_request_event`] call fails (returns a negative error code),
     /// which can happen if the event API is uninitialized or the event cannot be disabled.
-    pub fn request_event(&self, event: u32, enable: i32) -> Result<()> {
-        unsafe { result!(mpv_request_event(self.as_ptr().cast_mut(), event, enable)) }
+    pub fn request_event(&self, event: u32, enable: bool) -> Result<()> {
+        unsafe { result!(mpv_request_event(self.as_ptr().cast_mut(), event, i32::from(enable))) }
     }
 
     /// Interrupts the current [`Handle::wait_event()`] call.
@@ -829,10 +832,20 @@ impl Handle {
     }
 
     pub fn set_wakeup_callback(&self) {
+        // mpv_set_wakeup_callback()
         unimplemented!()
     }
 
-    pub fn wait_async_requests(&self) {
+    pub fn wait_async_requests(&mut self) {
+        unsafe { mpv_wait_async_requests(self.as_mut_ptr()) }
+    }
+
+    pub fn del_property(&self, name: impl Into<Vec<u8>>) -> crate::Result<()> {
+        let name = CString::new(name.into())?;
+        result!(unsafe { mpv_del_property(self.as_mut_ptr(), name.as_ptr()) })
+    }
+
+    pub fn mpv_event_to_node(&self) {
         unimplemented!()
     }
 
@@ -872,12 +885,9 @@ impl Handle {
             }
         }
 
-        let Node::Map(script_opts) = self
+        let script_opts: HashMap<String, Node> = self
             .get_property("script-opts")
-            .expect("'script-opts' property unavailable")
-        else {
-            unreachable!("'script-opts' always return a Map variant")
-        };
+            .expect("'script-opts' property unavailable");
 
         let prefix = format!("{plugin_name}-");
         for (full_key, node_value) in script_opts {
@@ -1413,11 +1423,11 @@ pub enum EndFileReason {
 impl From<u32> for EndFileReason {
     fn from(value: u32) -> Self {
         match value {
-            0 => Self::Eof,
-            2 => Self::Stop,
-            3 => Self::Quit,
-            4 => Self::Error,
-            5 => Self::Redirect,
+            mpv_end_file_reason_MPV_END_FILE_REASON_EOF => Self::Eof,
+            mpv_end_file_reason_MPV_END_FILE_REASON_STOP => Self::Stop,
+            mpv_end_file_reason_MPV_END_FILE_REASON_QUIT => Self::Quit,
+            mpv_end_file_reason_MPV_END_FILE_REASON_ERROR => Self::Error,
+            mpv_end_file_reason_MPV_END_FILE_REASON_REDIRECT => Self::Redirect,
             value => Self::Unknown(value),
         }
     }

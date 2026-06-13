@@ -210,7 +210,7 @@ impl Sealed for Node {
 impl Sealed for Vec<Node> {
     fn from_ptr(ptr: *const c_void) -> crate::Result<Self> {
         let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
-            return Ok(Vec::default());
+            return Ok(Self::default());
         };
 
         mpv_node.to_node_array()

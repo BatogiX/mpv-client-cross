@@ -51,120 +51,6 @@ use std::{
 #[cfg(feature = "macros")]
 pub use mpv_client_macros::main;
 
-/// Representation of a borrowed client context used by the client API.
-/// Every client has its own private handle.
-#[repr(transparent)]
-pub struct Handle {
-    inner: [mpv_handle],
-}
-
-#[derive(Debug)]
-pub struct EventQueueToken(i64);
-
-/// A type representing an owned client context.
-pub struct Client(*mut mpv_handle);
-
-/// An enum representing the available events that can be received by
-/// [`Handle::wait_event`].
-pub enum Event<'h> {
-    /// Nothing happened. Happens on timeouts or sporadic wakeups.
-    None,
-    /// Happens when the player quits. The player enters a state where it tries
-    /// to disconnect all clients.
-    Shutdown,
-    /// See [`Handle::request_log_messages`].
-    /// See also [`LogMessage`].
-    LogMessage(LogMessage<'h>),
-    /// Reply to a [`Handle::get_property_async`] request.
-    /// See also [`Property`].
-    GetPropertyReply(Result<()>, u64, Option<Property<'h>>),
-    /// Reply to a [`Handle::set_property_async`] request.
-    /// (Unlike [`Event::GetPropertyReply`], [`Property`] is not used.)
-    SetPropertyReply(Result<()>, u64),
-    /// Reply to a [`Handle::command_async`] or [`mpv_client_sys::mpv_command_node_async()`] request.
-    CommandReply(Result<()>, u64, Command<'h>),
-    /// Notification before playback start of a file (before the file is loaded).
-    /// See also [`StartFile`].
-    StartFile(StartFile<'h>),
-    /// Notification after playback end (after the file was unloaded).
-    /// See also [`EndFile`].
-    EndFile(EndFile<'h>),
-    /// Notification when the file has been loaded (headers were read etc.), and
-    /// decoding starts.
-    FileLoaded,
-    /// Triggered by the script-message input command. The command uses the
-    /// first argument of the command as client name (see [`Handle::name`]) to
-    /// dispatch the message, and passes along all arguments starting from the
-    /// second argument as strings.
-    /// See also [`ClientMessage`].
-    ClientMessage(ClientMessage<'h>),
-    /// Happens after video changed in some way. This can happen on resolution
-    /// changes, pixel format changes, or video filter changes. The event is
-    /// sent after the video filters and the VO are reconfigured. Applications
-    /// embedding a mpv window should listen to this event in order to resize
-    /// the window if needed.
-    /// Note that this event can happen sporadically, and you should check
-    /// yourself whether the video parameters really changed before doing
-    /// something expensive.
-    VideoReconfig,
-    /// Similar to [`Event::VideoReconfig`]. This is relatively uninteresting,
-    /// because there is no such thing as audio output embedding.
-    AudioReconfig,
-    /// Happens when a seek was initiated. Playback stops. Usually it will
-    /// resume with [`Event::PlaybackRestart`] as soon as the seek is finished.
-    Seek,
-    /// There was a discontinuity of some sort (like a seek), and playback
-    /// was reinitialized. Usually happens on start of playback and after
-    /// seeking. The main purpose is allowing the client to detect when a seek
-    /// request is finished.
-    PlaybackRestart,
-    /// Event sent due to [`mpv_observe_property()`].
-    /// See also [`Property`].
-    PropertyChange(u64, Property<'h>),
-    /// Happens if the internal per-mpv_handle ringbuffer overflows, and at
-    /// least 1 event had to be dropped. This can happen if the client doesn't
-    /// read the event queue quickly enough with [`Handle::wait_event`], or if the
-    /// client makes a very large number of asynchronous calls at once.
-    ///
-    /// Event delivery will continue normally once this event was returned
-    /// (this forces the client to empty the queue completely).
-    QueueOverflow,
-    /// Triggered if a hook handler was registered with [`Handle::hook_add`], and the
-    /// hook is invoked. If you receive this, you must handle it, and continue
-    /// the hook with [`Handle::hook_continue`].
-    /// See also [`Hook`].
-    Hook(u64, Hook<'h>),
-}
-
-/// Data associated with [`Event::GetPropertyReply`] and [`Event::PropertyChange`].
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
-
-/// Data associated with [`Event::LogMessage`].
-#[repr(transparent)]
-pub struct LogMessage<'h>(*const mpv_event_log_message, PhantomData<&'h Handle>);
-
-/// Data associated with [`Event::StartFile`].
-#[repr(transparent)]
-pub struct StartFile<'h>(*const mpv_event_start_file, PhantomData<&'h Handle>);
-
-/// Data associated with [`Event::EndFile`].
-#[repr(transparent)]
-pub struct EndFile<'h>(*const mpv_event_end_file, PhantomData<&'h Handle>);
-
-/// Data associated with [`Event::ClientMessage`].
-#[repr(transparent)]
-pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Handle>);
-
-/// Data associated with [`Event::Hook`].
-#[repr(transparent)]
-pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
-
-/// Data associated with [`Event::CommandReply`].
-#[repr(transparent)]
-pub struct Command<'h>(*const mpv_event_command, PhantomData<&'h Handle>);
-
 macro_rules! result {
     ($f:expr) => {{
         let code = $f;
@@ -200,6 +86,18 @@ macro_rules! osd_async {
         $client.command_async($reply, ["show-text", &format!($($arg)*), &$duration.as_millis().to_string()])
     }
 }
+
+/// Representation of a borrowed client context used by the client API.
+/// Every client has its own private handle.
+#[repr(transparent)]
+pub struct Handle {
+    inner: [mpv_handle],
+}
+
+/// SAFETY: libmpv guarantees that the same `mpv_handle` is safe to be called from multiple
+/// threads concurrently. The single exception is [`mpv_wait_event`], which is strictly
+/// protected at compile-time by requiring a unique &mut [`EventQueueToken`].
+unsafe impl Sync for Handle {}
 
 impl Handle {
     /// Safely bind an [`mpv_handle`] pointer to a shared reference and mint its
@@ -1128,10 +1026,11 @@ impl Handle {
     }
 }
 
-/// SAFETY: libmpv guarantees that the same `mpv_handle` is safe to be called from multiple
-/// threads concurrently. The single exception is [`mpv_wait_event`], which is strictly
-/// protected at compile-time by requiring a unique &mut [`EventQueueToken`].
-unsafe impl Sync for Handle {}
+#[derive(Debug)]
+pub struct EventQueueToken(i64);
+
+/// A type representing an owned client context.
+pub struct Client(*mut mpv_handle);
 
 impl Client {
     /// Create a new standalone mpv client.
@@ -1197,6 +1096,78 @@ impl UninitializedClient {
     }
 }
 
+/// An enum representing the available events that can be received by
+/// [`Handle::wait_event`].
+pub enum Event<'h> {
+    /// Nothing happened. Happens on timeouts or sporadic wakeups.
+    None,
+    /// Happens when the player quits. The player enters a state where it tries
+    /// to disconnect all clients.
+    Shutdown,
+    /// See [`Handle::request_log_messages`].
+    /// See also [`LogMessage`].
+    LogMessage(LogMessage<'h>),
+    /// Reply to a [`Handle::get_property_async`] request.
+    /// See also [`Property`].
+    GetPropertyReply(Result<()>, u64, Option<Property<'h>>),
+    /// Reply to a [`Handle::set_property_async`] request.
+    /// (Unlike [`Event::GetPropertyReply`], [`Property`] is not used.)
+    SetPropertyReply(Result<()>, u64),
+    /// Reply to a [`Handle::command_async`] or [`mpv_client_sys::mpv_command_node_async()`] request.
+    CommandReply(Result<()>, u64, Command<'h>),
+    /// Notification before playback start of a file (before the file is loaded).
+    /// See also [`StartFile`].
+    StartFile(StartFile<'h>),
+    /// Notification after playback end (after the file was unloaded).
+    /// See also [`EndFile`].
+    EndFile(EndFile<'h>),
+    /// Notification when the file has been loaded (headers were read etc.), and
+    /// decoding starts.
+    FileLoaded,
+    /// Triggered by the script-message input command. The command uses the
+    /// first argument of the command as client name (see [`Handle::name`]) to
+    /// dispatch the message, and passes along all arguments starting from the
+    /// second argument as strings.
+    /// See also [`ClientMessage`].
+    ClientMessage(ClientMessage<'h>),
+    /// Happens after video changed in some way. This can happen on resolution
+    /// changes, pixel format changes, or video filter changes. The event is
+    /// sent after the video filters and the VO are reconfigured. Applications
+    /// embedding a mpv window should listen to this event in order to resize
+    /// the window if needed.
+    /// Note that this event can happen sporadically, and you should check
+    /// yourself whether the video parameters really changed before doing
+    /// something expensive.
+    VideoReconfig,
+    /// Similar to [`Event::VideoReconfig`]. This is relatively uninteresting,
+    /// because there is no such thing as audio output embedding.
+    AudioReconfig,
+    /// Happens when a seek was initiated. Playback stops. Usually it will
+    /// resume with [`Event::PlaybackRestart`] as soon as the seek is finished.
+    Seek,
+    /// There was a discontinuity of some sort (like a seek), and playback
+    /// was reinitialized. Usually happens on start of playback and after
+    /// seeking. The main purpose is allowing the client to detect when a seek
+    /// request is finished.
+    PlaybackRestart,
+    /// Event sent due to [`mpv_observe_property()`].
+    /// See also [`Property`].
+    PropertyChange(u64, Property<'h>),
+    /// Happens if the internal per-mpv_handle ringbuffer overflows, and at
+    /// least 1 event had to be dropped. This can happen if the client doesn't
+    /// read the event queue quickly enough with [`Handle::wait_event`], or if the
+    /// client makes a very large number of asynchronous calls at once.
+    ///
+    /// Event delivery will continue normally once this event was returned
+    /// (this forces the client to empty the queue completely).
+    QueueOverflow,
+    /// Triggered if a hook handler was registered with [`Handle::hook_add`], and the
+    /// hook is invoked. If you receive this, you must handle it, and continue
+    /// the hook with [`Handle::hook_continue`].
+    /// See also [`Hook`].
+    Hook(u64, Hook<'h>),
+}
+
 impl Event<'_> {
     fn from_ptr(event: *const mpv_event) -> Self {
         if event.is_null() {
@@ -1248,24 +1219,29 @@ impl fmt::Display for Event<'_> {
         match self {
             Event::None => Ok(()),
             Event::LogMessage(log_message) => write!(f, "{event_name}: {log_message}"),
-            Event::GetPropertyReply(_error, _reply, property) => {
+            Event::GetPropertyReply(error, reply, property) => {
                 if let Some(property) = property {
                     write!(f, "{event_name}: {property}")
                 } else {
                     write!(f, "{event_name}: {property:?}")
                 }
             }
-            Event::SetPropertyReply(_error, _reply) => todo!(),
-            Event::CommandReply(_error, _reply, _command) => todo!(),
+            Event::SetPropertyReply(error, reply) => write!(f, "{event_name}"),
+            Event::CommandReply(error, reply, command) => write!(f, "{event_name}"),
             Event::StartFile(start_file) => write!(f, "{event_name}: {start_file}"),
             Event::EndFile(end_file) => write!(f, "{event_name}: {end_file}"),
             Event::ClientMessage(client_message) => write!(f, "{event_name}: {client_message}"),
-            Event::PropertyChange(_reply, property) => write!(f, "{event_name}: {property}"),
-            Event::Hook(_reply, hook) => todo!(),
+            Event::PropertyChange(reply, property) => write!(f, "{event_name}: {property}"),
+            Event::Hook(reply, hook) => write!(f, "{event_name}"),
             _ => f.write_str(event_name),
         }
     }
 }
+
+/// Data associated with [`Event::GetPropertyReply`] and [`Event::PropertyChange`].
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Property<'h>(*const mpv_event_property, PhantomData<&'h Handle>);
 
 impl Property<'_> {
     /// Wrap a raw [`mpv_event_property`]
@@ -1330,6 +1306,10 @@ impl fmt::Display for Property<'_> {
     }
 }
 
+/// Data associated with [`Event::LogMessage`].
+#[repr(transparent)]
+pub struct LogMessage<'h>(*const mpv_event_log_message, PhantomData<&'h Handle>);
+
 impl LogMessage<'_> {
     /// Wrap a raw [`mpv_event_log_message`]
     /// The pointer must not be null
@@ -1365,6 +1345,10 @@ impl fmt::Display for LogMessage<'_> {
     }
 }
 
+/// Data associated with [`Event::StartFile`].
+#[repr(transparent)]
+pub struct StartFile<'h>(*const mpv_event_start_file, PhantomData<&'h Handle>);
+
 impl StartFile<'_> {
     /// Wrap a raw [`mpv_event_start_file`]
     /// The pointer must not be null
@@ -1385,6 +1369,10 @@ impl fmt::Display for StartFile<'_> {
         f.write_str("start file")
     }
 }
+
+/// Data associated with [`Event::EndFile`].
+#[repr(transparent)]
+pub struct EndFile<'h>(*const mpv_event_end_file, PhantomData<&'h Handle>);
 
 impl EndFile<'_> {
     /// Wrap a raw [`mpv_event_end_file`]
@@ -1440,6 +1428,10 @@ impl fmt::Display for EndFile<'_> {
     }
 }
 
+/// Data associated with [`Event::ClientMessage`].
+#[repr(transparent)]
+pub struct ClientMessage<'h>(*const mpv_event_client_message, PhantomData<&'h Handle>);
+
 impl<'h> ClientMessage<'h> {
     /// Wrap a raw [`mpv_event_client_message`].
     /// The pointer must not be null
@@ -1478,6 +1470,10 @@ impl fmt::Display for ClientMessage<'_> {
     }
 }
 
+/// Data associated with [`Event::Hook`].
+#[repr(transparent)]
+pub struct Hook<'h>(*const mpv_event_hook, PhantomData<&'h Handle>);
+
 impl<'h> Hook<'h> {
     /// Wrap a raw [`mpv_event_hook`].
     /// The pointer must not be null
@@ -1504,6 +1500,10 @@ impl fmt::Display for Hook<'_> {
         f.write_str(self.name())
     }
 }
+
+/// Data associated with [`Event::CommandReply`].
+#[repr(transparent)]
+pub struct Command<'h>(*const mpv_event_command, PhantomData<&'h Handle>);
 
 impl Command<'_> {
     /// Wrap a raw [`mpv_event_command`]

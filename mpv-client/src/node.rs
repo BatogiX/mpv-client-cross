@@ -8,7 +8,7 @@ use std::{
     ptr, slice,
 };
 
-use crate::{Handle, format::FormatType};
+use crate::{Handle, format::Format};
 
 #[derive(Debug, Clone, Default)]
 pub enum Node {
@@ -44,8 +44,8 @@ pub trait MpvNode: Sized {
     fn as_mut_ptr(&mut self) -> *mut mpv_node;
     fn to_node(self) -> crate::Result<Node> {
         let mpv_node = self.as_ref();
-        let node = match FormatType::from(mpv_node.format) {
-            FormatType::String => {
+        let node = match Format::from(mpv_node.format) {
+            Format::String => {
                 let string = unsafe { mpv_node.u.string };
                 if string.is_null() {
                     Node::None
@@ -53,10 +53,10 @@ pub trait MpvNode: Sized {
                     Node::String(unsafe { CStr::from_ptr(string) }.to_string_lossy().into_owned())
                 }
             }
-            FormatType::Int => Node::Int(unsafe { mpv_node.u.int64 }),
-            FormatType::Double => Node::Double(unsafe { mpv_node.u.double_ }),
-            FormatType::Bool => Node::Bool(unsafe { mpv_node.u.flag } != 0),
-            FormatType::NodeArray => {
+            Format::Int => Node::Int(unsafe { mpv_node.u.int64 }),
+            Format::Double => Node::Double(unsafe { mpv_node.u.double_ }),
+            Format::Bool => Node::Bool(unsafe { mpv_node.u.flag } != 0),
+            Format::NodeArray => {
                 let list = unsafe { mpv_node.u.list };
                 if list.is_null() {
                     return Ok(Node::Array(Vec::default()));
@@ -79,7 +79,7 @@ pub trait MpvNode: Sized {
                         .collect::<crate::Result<Vec<Node>>>()?,
                 )
             }
-            FormatType::NodeMap => {
+            Format::NodeMap => {
                 let list = unsafe { mpv_node.u.list };
                 if list.is_null() {
                     return Ok(Node::Map(HashMap::default()));
@@ -117,7 +117,7 @@ pub trait MpvNode: Sized {
 
                 Node::Map(map)
             }
-            FormatType::ByteArray => {
+            Format::ByteArray => {
                 let ba = unsafe { mpv_node.u.ba };
                 if ba.is_null() {
                     return Ok(Node::ByteArray(Vec::default()));
@@ -261,7 +261,7 @@ pub struct ClonedMpvNode(mpv_node);
 impl Default for ClonedMpvNode {
     fn default() -> Self {
         Self(mpv_node {
-            format: FormatType::None.as_u32(),
+            format: Format::None.as_u32(),
             u: mpv_node__bindgen_ty_1 { int64: 0 },
         })
     }
@@ -297,34 +297,34 @@ impl RawMpvNode {
 
         match node {
             Node::None => {
-                mpv_node.format = FormatType::None.as_u32();
+                mpv_node.format = Format::None.as_u32();
             }
             Node::String(string) => {
-                mpv_node.format = FormatType::String.as_u32();
+                mpv_node.format = Format::String.as_u32();
                 mpv_node.u.string = CString::new(string).expect("CString::new failed").into_raw();
             }
             Node::Int(int64) => {
-                mpv_node.format = FormatType::Int.as_u32();
+                mpv_node.format = Format::Int.as_u32();
                 mpv_node.u.int64 = int64;
             }
             Node::Double(float64) => {
-                mpv_node.format = FormatType::Double.as_u32();
+                mpv_node.format = Format::Double.as_u32();
                 mpv_node.u.double_ = float64;
             }
             Node::Bool(bool) => {
-                mpv_node.format = FormatType::Bool.as_u32();
+                mpv_node.format = Format::Bool.as_u32();
                 mpv_node.u.flag = i32::from(bool);
             }
             Node::Array(node_array) => {
-                mpv_node.format = FormatType::NodeArray.as_u32();
+                mpv_node.format = Format::NodeArray.as_u32();
                 mpv_node.u.list = mpv_node_list_from_node_array(node_array);
             }
             Node::Map(node_map) => {
-                mpv_node.format = FormatType::NodeMap.as_u32();
+                mpv_node.format = Format::NodeMap.as_u32();
                 mpv_node.u.list = mpv_node_list_from_node_map(node_map);
             }
             Node::ByteArray(byte_array) => {
-                mpv_node.format = FormatType::ByteArray.as_u32();
+                mpv_node.format = Format::ByteArray.as_u32();
                 mpv_node.u.ba = mpv_byte_array_from_byte_array(byte_array);
             }
         }
@@ -347,14 +347,14 @@ impl Drop for RawMpvNode {
     fn drop(&mut self) {
         fn drop_mpv_node(mpv_node: &mut mpv_node) {
             unsafe {
-                match FormatType::from(mpv_node.format) {
-                    FormatType::String => {
+                match Format::from(mpv_node.format) {
+                    Format::String => {
                         if mpv_node.u.string.is_null() {
                             return;
                         }
                         drop(CString::from_raw(mpv_node.u.string));
                     }
-                    FormatType::NodeArray | FormatType::NodeMap => {
+                    Format::NodeArray | Format::NodeMap => {
                         let list = mpv_node.u.list;
                         if list.is_null() {
                             return;
@@ -381,7 +381,7 @@ impl Drop for RawMpvNode {
                             drop(Box::from_raw(ptr::slice_from_raw_parts_mut(values, len)));
                         }
                     }
-                    FormatType::ByteArray => {
+                    Format::ByteArray => {
                         let ba = mpv_node.u.ba;
                         if ba.is_null() {
                             return;

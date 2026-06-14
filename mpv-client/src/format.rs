@@ -20,48 +20,48 @@ use std::{
 };
 
 #[allow(private_bounds)]
-pub trait Format: Sealed {
+pub trait AsFormat: Sealed {
     const MPV_FORMAT: u32;
 }
 
-impl Format for () {
-    const MPV_FORMAT: u32 = FormatType::None.as_u32();
+impl AsFormat for () {
+    const MPV_FORMAT: u32 = Format::None.as_u32();
 }
 
-impl Format for String {
-    const MPV_FORMAT: u32 = FormatType::String.as_u32();
+impl AsFormat for String {
+    const MPV_FORMAT: u32 = Format::String.as_u32();
 }
 
-impl Format for OsdString {
-    const MPV_FORMAT: u32 = FormatType::OsdString.as_u32();
+impl AsFormat for OsdString {
+    const MPV_FORMAT: u32 = Format::OsdString.as_u32();
 }
 
-impl Format for bool {
-    const MPV_FORMAT: u32 = FormatType::Bool.as_u32();
+impl AsFormat for bool {
+    const MPV_FORMAT: u32 = Format::Bool.as_u32();
 }
 
-impl Format for i64 {
-    const MPV_FORMAT: u32 = FormatType::Int.as_u32();
+impl AsFormat for i64 {
+    const MPV_FORMAT: u32 = Format::Int.as_u32();
 }
 
-impl Format for f64 {
-    const MPV_FORMAT: u32 = FormatType::Double.as_u32();
+impl AsFormat for f64 {
+    const MPV_FORMAT: u32 = Format::Double.as_u32();
 }
 
-impl Format for Node {
-    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
+impl AsFormat for Node {
+    const MPV_FORMAT: u32 = Format::Node.as_u32();
 }
 
-impl Format for Vec<Node> {
-    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
+impl AsFormat for Vec<Node> {
+    const MPV_FORMAT: u32 = Format::Node.as_u32();
 }
 
-impl Format for HashMap<String, Node> {
-    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
+impl AsFormat for HashMap<String, Node> {
+    const MPV_FORMAT: u32 = Format::Node.as_u32();
 }
 
-impl Format for Vec<u8> {
-    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
+impl AsFormat for Vec<u8> {
+    const MPV_FORMAT: u32 = Format::Node.as_u32();
 }
 
 pub trait Sealed: Sized + Default {
@@ -282,8 +282,8 @@ impl Drop for ClonedMpvString {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy)]
-pub enum FormatType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
     None = mpv_format_MPV_FORMAT_NONE,
     String = mpv_format_MPV_FORMAT_STRING,
     OsdString = mpv_format_MPV_FORMAT_OSD_STRING,
@@ -297,7 +297,7 @@ pub enum FormatType {
     Unknown(u32),
 }
 
-impl FormatType {
+impl Format {
     pub const fn as_u32(self) -> u32 {
         match self {
             Self::None => mpv_format_MPV_FORMAT_NONE,
@@ -315,7 +315,7 @@ impl FormatType {
     }
 }
 
-impl From<u32> for FormatType {
+impl From<u32> for Format {
     fn from(v: u32) -> Self {
         match v {
             v if v == const { mpv_format_MPV_FORMAT_NONE } => Self::None,
@@ -333,7 +333,7 @@ impl From<u32> for FormatType {
     }
 }
 
-impl Display for FormatType {
+impl Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::None => f.write_str("None"),

@@ -10,11 +10,11 @@ mod options;
 
 use crate::{
     error::MpvError,
-    format::{FormatType, Sealed as _},
+    format::{Format, Sealed as _},
     options::CoercingString,
 };
 pub use error::{Error, Result};
-pub use format::{Format, OsdString};
+pub use format::{AsFormat, OsdString};
 pub use mpv_client_sys::mpv_handle;
 use mpv_client_sys::{
     mpv_abort_async_command, mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async,
@@ -29,9 +29,9 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
     mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
     mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
-    mpv_event_start_file, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_get_property,
-    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
-    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
+    mpv_event_start_file, mpv_event_to_node, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents,
+    mpv_get_property, mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue,
+    mpv_initialize, mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
     mpv_set_property, mpv_set_property_async, mpv_set_wakeup_callback, mpv_unobserve_property, mpv_wait_async_requests,
     mpv_wait_event, mpv_wakeup,
 };
@@ -390,7 +390,7 @@ impl Handle {
     ///
     /// This function can also be used to configure global initialization options
     /// *before* the instance is explicitly initialized via `mpv_initialize()`.
-    pub fn set_property<T: Format>(&self, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
+    pub fn set_property<T: AsFormat>(&self, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
@@ -423,7 +423,7 @@ impl Handle {
     /// Returns an error if:
     /// - The `name` contains an internal null byte, making it an invalid C-string.
     /// - The underlying [`mpv_set_property_async`] call fails to send the request (e.g., if the context is invalid).
-    pub fn set_property_async<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
+    pub fn set_property_async<T: AsFormat>(&self, reply: u64, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         let c_name = CString::new(name.into())?;
         let c_name_ptr = c_name.as_ptr();
         let handle = self.as_ptr().cast_mut();
@@ -439,7 +439,7 @@ impl Handle {
     /// # Errors
     /// Returns an mpv error if the property cannot be read, or if the format
     /// doesn't match the internal format.
-    pub fn get_property<T: Format>(&self, name: impl Into<Vec<u8>>) -> Result<T> {
+    pub fn get_property<T: AsFormat>(&self, name: impl Into<Vec<u8>>) -> Result<T> {
         let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
@@ -470,7 +470,7 @@ impl Handle {
     /// Returns an error if:
     /// - The `name` contains an internal null byte, making it an invalid C-string.
     /// - The underlying `mpv_get_property_async` call fails to send the request (e.g., if the context is invalid).
-    pub fn get_property_async<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
+    pub fn get_property_async<T: AsFormat>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
         let name = CString::new(name.into())?;
         let handle = self.as_ptr().cast_mut();
         unsafe { result!(mpv_get_property_async(handle, reply, name.as_ptr(), T::MPV_FORMAT)) }
@@ -519,7 +519,7 @@ impl Handle {
     ///
     /// Only the specific [`Handle`] that registers this observation will receive the
     /// resulting change events or be permitted to unobserve them.
-    pub fn observe_property<T: Format>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
+    pub fn observe_property<T: AsFormat>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
         let name = CString::new(name.into())?;
         unsafe {
             result!(mpv_observe_property(
@@ -870,8 +870,8 @@ impl Handle {
         result!(unsafe { mpv_del_property(self.as_mut_ptr(), name.as_ptr()) })
     }
 
-    pub fn mpv_event_to_node(&self) {
-        unimplemented!()
+    fn event_to_node(event: Event) -> crate::Result<Node> {
+        unsafe { result!(mpv_event_to_node(dst, src)) }
     }
 
     /// # Panics
@@ -1264,7 +1264,7 @@ impl Property<'_> {
     }
 
     #[must_use]
-    pub fn data<T: Format>(&self) -> Option<T> {
+    pub fn data<T: AsFormat>(&self) -> Option<T> {
         unsafe {
             if self.format() == T::MPV_FORMAT {
                 T::from_ptr((*self.0).data).ok()
@@ -1277,18 +1277,18 @@ impl Property<'_> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let format = FormatType::from(self.format());
+        let format = Format::from(self.format());
         let data = match format {
-            FormatType::String => self.data::<String>().map(|s| format!("\"{s}\"")),
-            FormatType::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),
-            FormatType::Bool => self.data::<bool>().map(|v| v.to_string()),
-            FormatType::Int => self.data::<i64>().map(|v| v.to_string()),
-            FormatType::Double => self.data::<f64>().map(|v| v.to_string()),
-            FormatType::Node => self.data::<Node>().map(|v| v.to_string()),
-            FormatType::NodeArray => self.data::<Vec<Node>>().map(|v| format!("{v:#?}")),
-            FormatType::NodeMap => self.data::<HashMap<String, Node>>().map(|v| format!("{v:#?}")),
-            FormatType::ByteArray => self.data::<Vec<u8>>().map(|v| format!("{v:#?}")),
-            FormatType::None | FormatType::Unknown(_) => None,
+            Format::String => self.data::<String>().map(|s| format!("\"{s}\"")),
+            Format::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),
+            Format::Bool => self.data::<bool>().map(|v| v.to_string()),
+            Format::Int => self.data::<i64>().map(|v| v.to_string()),
+            Format::Double => self.data::<f64>().map(|v| v.to_string()),
+            Format::Node => self.data::<Node>().map(|v| v.to_string()),
+            Format::NodeArray => self.data::<Vec<Node>>().map(|v| format!("{v:#?}")),
+            Format::NodeMap => self.data::<HashMap<String, Node>>().map(|v| format!("{v:#?}")),
+            Format::ByteArray => self.data::<Vec<u8>>().map(|v| format!("{v:#?}")),
+            Format::None | Format::Unknown(_) => None,
         }
         .unwrap_or_else(|| "None".to_owned());
 

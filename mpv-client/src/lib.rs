@@ -11,6 +11,7 @@ mod options;
 use crate::{
     error::MpvError,
     format::{Format, Sealed as _},
+    node::{BorrowedMpvNode, ClonedMpvNode, MpvNode},
     options::CoercingString,
 };
 pub use error::{Error, Result};
@@ -41,11 +42,12 @@ use std::{
     collections::HashMap,
     convert::Into,
     ffi::{CStr, CString, NulError, c_char, c_void},
-    fmt, fs, iter,
+    fmt::{self, Display},
+    fs, iter,
     marker::PhantomData,
     ops::Deref,
     path::{Path, PathBuf},
-    ptr, result,
+    ptr, result, slice,
 };
 
 #[cfg(feature = "macros")]
@@ -844,10 +846,30 @@ impl Handle {
         unsafe { mpv_wakeup(self.as_ptr().cast_mut()) }
     }
 
-    pub fn set_wakeup_callback(&mut self) {
-        // mpv_set_wakeup_callback()
-        unimplemented!()
-    }
+    // /// Set a custom function that should be called when there are new events. Use
+    // /// this if blocking in [`mpv_wait_event()`] to wait for new events is not feasible.
+    // ///
+    // /// In general, the client API expects you to call [`mpv_wait_event()`] to receive
+    // /// notifications, and the wakeup callback is merely a helper utility to make
+    // /// this easier in certain situations. Note that it's possible that there's
+    // /// only one wakeup callback invocation for multiple events. You should call
+    // /// [`mpv_wait_event()`] with no timeout until `MPV_EVENT_NONE` is reached, at which
+    // /// point the event queue is empty.
+    // ///
+    // /// If you actually want to do processing in a callback, spawn a thread that
+    // /// does nothing but call [`mpv_wait_event()`] in a loop and dispatches the result
+    // /// to a callback.
+    // ///
+    // /// Only one wakeup callback can be set.
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `cb` - Function that should be called if a wakeup is required.
+    // /// * `d` - Arbitrary userdata passed back to `cb`.
+    // pub fn set_wakeup_callback(&mut self) {
+    //     mpv_set_wakeup_callback()
+    //     unimplemented!()
+    // }
 
     pub fn wait_async_requests(&self) {
         unsafe { mpv_wait_async_requests(self.as_mut_ptr()) }
@@ -870,8 +892,10 @@ impl Handle {
         result!(unsafe { mpv_del_property(self.as_mut_ptr(), name.as_ptr()) })
     }
 
-    fn event_to_node(event: Event) -> crate::Result<Node> {
-        unsafe { result!(mpv_event_to_node(dst, src)) }
+    fn event_to_node(event: *mut mpv_event) -> crate::Result<Node> {
+        let mut mpv_node = ClonedMpvNode::default();
+        result!(unsafe { mpv_event_to_node(mpv_node.as_mut_ptr(), event) })?;
+        Ok(mpv_node.to_node())
     }
 
     /// # Panics
@@ -1221,19 +1245,41 @@ impl fmt::Display for Event<'_> {
             Event::None => Ok(()),
             Event::LogMessage(log_message) => write!(f, "{event_name}: {log_message}"),
             Event::GetPropertyReply(error, reply, property) => {
-                if let Some(property) = property {
-                    write!(f, "{event_name}: {property}")
+                write!(f, "{event_name}: ")?;
+                if let Err(error) = error {
+                    write!(f, "(err: {error:?}, reply: {reply}): ")?;
                 } else {
-                    write!(f, "{event_name}: {property:?}")
+                    write!(f, "(reply: {reply}): ")?;
+                }
+
+                if let Some(property) = property {
+                    write!(f, "{property}")
+                } else {
+                    write!(f, "None")
                 }
             }
-            Event::SetPropertyReply(error, reply) => write!(f, "{event_name}"),
-            Event::CommandReply(error, reply, command) => write!(f, "{event_name}"),
+            Event::SetPropertyReply(error, reply) => {
+                write!(f, "{event_name}: ")?;
+                if let Err(error) = error {
+                    write!(f, "(err: {error:?}, reply: {reply}): ")
+                } else {
+                    write!(f, "(reply: {reply}): ")
+                }
+            }
+            Event::CommandReply(error, reply, command) => {
+                write!(f, "{event_name}: ")?;
+                if let Err(error) = error {
+                    write!(f, "(err: {error:?}, reply: {reply}): ")?;
+                } else {
+                    write!(f, "(reply: {reply}): ")?;
+                }
+                write!(f, "{command}")
+            }
             Event::StartFile(start_file) => write!(f, "{event_name}: {start_file}"),
             Event::EndFile(end_file) => write!(f, "{event_name}: {end_file}"),
             Event::ClientMessage(client_message) => write!(f, "{event_name}: {client_message}"),
-            Event::PropertyChange(reply, property) => write!(f, "{event_name}: {property}"),
-            Event::Hook(reply, hook) => write!(f, "{event_name}"),
+            Event::PropertyChange(reply, property) => write!(f, "{event_name}: (reply: {reply}): {property}"),
+            Event::Hook(reply, hook) => write!(f, "{event_name}: (reply: {reply}): {hook}"),
             _ => f.write_str(event_name),
         }
     }
@@ -1267,7 +1313,7 @@ impl Property<'_> {
     pub fn data<T: AsFormat>(&self) -> Option<T> {
         unsafe {
             if self.format() == T::MPV_FORMAT {
-                T::from_ptr((*self.0).data).ok()
+                Some(T::from_ptr((*self.0).data))
             } else {
                 None
             }
@@ -1446,7 +1492,7 @@ impl<'h> ClientMessage<'h> {
             let args = if num_args == 0 || (*self.0).args.is_null() {
                 &[]
             } else {
-                std::slice::from_raw_parts((*self.0).args, num_args)
+                slice::from_raw_parts((*self.0).args, num_args)
             };
 
             args.iter()
@@ -1501,12 +1547,23 @@ impl fmt::Display for Hook<'_> {
 #[repr(transparent)]
 pub struct Command<'h>(*const mpv_event_command, PhantomData<&'h Handle>);
 
+impl Display for Command<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.result())
+    }
+}
+
 impl Command<'_> {
     /// Wrap a raw [`mpv_event_command`]
     /// The pointer must not be null
     fn from_ptr(ptr: *const c_void) -> Self {
         assert!(!ptr.is_null());
         Self(ptr.cast::<mpv_event_command>(), PhantomData)
+    }
+
+    #[must_use]
+    pub fn result(&self) -> Node {
+        BorrowedMpvNode(&unsafe { *self.0 }.result).to_node()
     }
 }
 

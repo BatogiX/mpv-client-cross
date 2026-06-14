@@ -1,9 +1,11 @@
+use core::fmt;
 use mpv_client_sys::{mpv_byte_array, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list};
 use std::{
     cmp,
     collections::HashMap,
     ffi::{CStr, CString, c_void},
     fmt::Display,
+    hash::{BuildHasher, RandomState},
     ops::Deref,
     ptr, slice,
 };
@@ -11,7 +13,7 @@ use std::{
 use crate::{Handle, format::Format};
 
 #[derive(Debug, Clone, Default)]
-pub enum Node {
+pub enum Node<S = RandomState> {
     #[default]
     None,
     String(String),
@@ -20,20 +22,80 @@ pub enum Node {
     Bool(bool),
     ByteArray(Vec<u8>),
     Array(Vec<Self>),
-    Map(HashMap<String, Self>),
+    Map(HashMap<String, Self, S>),
+}
+
+impl Node<RandomState> {
+    pub fn string(s: impl Into<String>) -> Self {
+        Self::String(s.into())
+    }
+
+    #[must_use]
+    pub const fn int(i: i64) -> Self {
+        Self::Int(i)
+    }
+
+    #[must_use]
+    pub const fn double(d: f64) -> Self {
+        Self::Double(d)
+    }
+
+    #[must_use]
+    pub const fn bool(b: bool) -> Self {
+        Self::Bool(b)
+    }
+
+    pub fn byte_array(ba: impl Into<Vec<u8>>) -> Self {
+        Self::ByteArray(ba.into())
+    }
+
+    pub fn array(a: impl Into<Vec<Self>>) -> Self {
+        Self::Array(a.into())
+    }
+
+    pub fn map(m: impl Into<HashMap<String, Self>>) -> Self {
+        Self::Map(m.into())
+    }
 }
 
 impl Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::None => f.write_str("None"),
-            Self::String(v) => write!(f, "{v}"),
+            Self::String(v) => write!(f, "\"{v}\""),
             Self::Int(v) => write!(f, "{v}"),
             Self::Double(v) => write!(f, "{v}"),
             Self::Bool(v) => write!(f, "{v}"),
-            Self::ByteArray(items) => write!(f, "{items:#?}"),
-            Self::Array(nodes) => write!(f, "{nodes:#?}"),
-            Self::Map(hash_map) => write!(f, "{hash_map:#?}"),
+            Self::ByteArray(bytes) => {
+                f.write_str("[")?;
+                for (i, byte) in bytes.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{byte}")?;
+                }
+                f.write_str("]")
+            }
+            Self::Array(nodes) => {
+                f.write_str("[")?;
+                for (i, node) in nodes.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{node}")?;
+                }
+                f.write_str("]")
+            }
+            Self::Map(hash_map) => {
+                f.write_str("{")?;
+                for (i, (key, value)) in hash_map.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "\"{key}\": {value}")?;
+                }
+                f.write_str("}")
+            }
         }
     }
 }
@@ -42,9 +104,9 @@ impl Display for Node {
 pub trait MpvNode: Sized {
     fn as_ref(&self) -> BorrowedMpvNode<'_>;
     fn as_mut_ptr(&mut self) -> *mut mpv_node;
-    fn to_node(self) -> crate::Result<Node> {
+    fn to_node<S: BuildHasher + Default>(self) -> Node<S> {
         let mpv_node = self.as_ref();
-        let node = match Format::from(mpv_node.format) {
+        match Format::from(mpv_node.format) {
             Format::String => {
                 let string = unsafe { mpv_node.u.string };
                 if string.is_null() {
@@ -59,7 +121,7 @@ pub trait MpvNode: Sized {
             Format::NodeArray => {
                 let list = unsafe { mpv_node.u.list };
                 if list.is_null() {
-                    return Ok(Node::Array(Vec::default()));
+                    return Node::Array(Vec::default());
                 }
 
                 let list = unsafe { &*list };
@@ -76,13 +138,13 @@ pub trait MpvNode: Sized {
                     values
                         .iter()
                         .map(|raw_node| BorrowedMpvNode(raw_node).to_node())
-                        .collect::<crate::Result<Vec<Node>>>()?,
+                        .collect(),
                 )
             }
             Format::NodeMap => {
                 let list = unsafe { mpv_node.u.list };
                 if list.is_null() {
-                    return Ok(Node::Map(HashMap::default()));
+                    return Node::Map(HashMap::default());
                 }
 
                 let list = unsafe { &*mpv_node.u.list };
@@ -110,17 +172,18 @@ pub trait MpvNode: Sized {
                             None
                         } else {
                             let key = unsafe { CStr::from_ptr(k) }.to_string_lossy().into_owned();
-                            Some(BorrowedMpvNode(v).to_node().map(|node| (key, node)))
+                            let node = BorrowedMpvNode(v).to_node();
+                            Some((key, node))
                         }
                     })
-                    .collect::<crate::Result<HashMap<String, Node>>>()?;
+                    .collect();
 
                 Node::Map(map)
             }
             Format::ByteArray => {
                 let ba = unsafe { mpv_node.u.ba };
                 if ba.is_null() {
-                    return Ok(Node::ByteArray(Vec::default()));
+                    return Node::ByteArray(Vec::default());
                 }
 
                 let ba = unsafe { &*mpv_node.u.ba };
@@ -136,23 +199,21 @@ pub trait MpvNode: Sized {
                 Node::ByteArray(data.to_vec())
             }
             _ => Node::None,
-        };
-
-        Ok(node)
+        }
     }
 
-    fn to_node_array(self) -> crate::Result<Vec<Node>> {
+    fn to_node_array<S: BuildHasher + Default>(self) -> Vec<Node<S>> {
         let mpv_node = self.as_ref();
         let list = unsafe { mpv_node.u.list };
         if list.is_null() {
-            return Ok(Vec::default());
+            return Vec::default();
         }
 
         let list = unsafe { &*list };
         let num = list.num;
         let values = list.values;
         if num <= 0 || values.is_null() {
-            return Ok(Vec::default());
+            return Vec::default();
         }
 
         #[allow(clippy::cast_sign_loss)]
@@ -162,14 +223,14 @@ pub trait MpvNode: Sized {
         values
             .iter()
             .map(|mpv_node| BorrowedMpvNode(mpv_node).to_node())
-            .collect::<crate::Result<Vec<Node>>>()
+            .collect()
     }
 
-    fn to_node_map(self) -> crate::Result<HashMap<String, Node>> {
+    fn to_node_map<S: BuildHasher + Default>(self) -> HashMap<String, Node<S>, S> {
         let mpv_node = self.as_ref();
         let list = unsafe { mpv_node.u.list };
         if list.is_null() {
-            return Ok(HashMap::default());
+            return HashMap::default();
         }
 
         let list = unsafe { &*list };
@@ -177,7 +238,7 @@ pub trait MpvNode: Sized {
         let keys = list.keys;
         let values = list.values;
         if num <= 0 || values.is_null() || keys.is_null() {
-            return Ok(HashMap::default());
+            return HashMap::default();
         }
 
         #[allow(clippy::cast_sign_loss)]
@@ -185,18 +246,18 @@ pub trait MpvNode: Sized {
         let keys = unsafe { slice::from_raw_parts(keys, num) };
         let values = unsafe { slice::from_raw_parts(values, num) };
 
-        let mut node_map = HashMap::with_capacity(num);
+        let mut node_map = HashMap::with_capacity_and_hasher(num, S::default());
         for (key, value) in keys.iter().zip(values) {
             if key.is_null() {
-                return Ok(HashMap::default());
+                return HashMap::default();
             }
 
             let key = unsafe { CStr::from_ptr(*key) }.to_string_lossy().into_owned();
-            let value = BorrowedMpvNode(value).to_node()?;
+            let value = BorrowedMpvNode(value).to_node();
             node_map.insert(key, value);
         }
 
-        Ok(node_map)
+        node_map
     }
 
     fn to_node_byte_array(self) -> Vec<u8> {
@@ -223,7 +284,7 @@ pub trait MpvNode: Sized {
 /// Created by libmpv.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct BorrowedMpvNode<'a>(&'a mpv_node);
+pub struct BorrowedMpvNode<'a>(pub &'a mpv_node);
 
 impl BorrowedMpvNode<'_> {
     pub const fn from_ptr(ptr: *const c_void) -> Option<Self> {
@@ -288,8 +349,17 @@ impl Drop for ClonedMpvNode {
 #[repr(transparent)]
 pub struct RawMpvNode(mpv_node);
 
+impl Default for RawMpvNode {
+    fn default() -> Self {
+        Self(mpv_node {
+            format: Format::None.as_u32(),
+            u: mpv_node__bindgen_ty_1 { int64: 0 },
+        })
+    }
+}
+
 impl RawMpvNode {
-    pub fn from_node(node: Node) -> Self {
+    pub fn from_node<S: BuildHasher + Default>(node: Node<S>) -> Self {
         let mut mpv_node = mpv_node {
             format: 0,
             u: mpv_node__bindgen_ty_1 { int64: 0 },
@@ -404,7 +474,7 @@ impl Drop for RawMpvNode {
     }
 }
 
-fn mpv_node_list_from_node_array(node_array: Vec<Node>) -> *mut mpv_node_list {
+fn mpv_node_list_from_node_array<S: BuildHasher + Default>(node_array: Vec<Node<S>>) -> *mut mpv_node_list {
     let num = cmp::min(node_array.len(), i32::MAX as usize) as i32;
     let keys = ptr::null_mut();
     if num == 0 {
@@ -428,7 +498,7 @@ fn mpv_node_list_from_node_array(node_array: Vec<Node>) -> *mut mpv_node_list {
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }
 
-fn mpv_node_list_from_node_map(node_map: HashMap<String, Node>) -> *mut mpv_node_list {
+fn mpv_node_list_from_node_map<S: BuildHasher + Default>(node_map: HashMap<String, Node<S>, S>) -> *mut mpv_node_list {
     let num = cmp::min(node_map.len(), i32::MAX as usize) as i32;
     if num == 0 {
         return Box::into_raw(Box::new(mpv_node_list {

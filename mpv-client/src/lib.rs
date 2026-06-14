@@ -375,11 +375,11 @@ impl Handle {
     ///
     /// # Errors
     ///
-    /// Returns a [`crate::Error`] if:
+    /// Returns a [`Error`](`crate::Error`) if:
     /// * The property name contains an internal null byte.
     /// * The format parameter is incompatible with the target property type.
     /// * The property is modified before initialization but is not backed by an option
-    ///   (`MPV_ERROR_PROPERTY_UNAVAILABLE`).
+    ///   ([`mpv_error_MPV_ERROR_PROPERTY_UNAVAILABLE`](mpv_client_sys::mpv_error_MPV_ERROR_PROPERTY_UNAVAILABLE)).
     /// * The underlying `mpv_set_property` call returns any other negative error code.
     ///
     /// # Notes
@@ -437,9 +437,9 @@ impl Handle {
     /// Read the value of the given property.
     ///
     /// If the format doesn't match with the internal format of the property, access
-    /// usually will fail with [`mpv_client_sys::mpv_error_MPV_ERROR_PROPERTY_FORMAT`]. In some cases, the data
-    /// is automatically converted and access succeeds. For example, i64 is always
-    /// converted to f64, and access using String usually invokes a string formatter.
+    /// usually will fail with [`mpv_error_MPV_ERROR_PROPERTY_FORMAT`](`mpv_client_sys::mpv_error_MPV_ERROR_PROPERTY_FORMAT`). In some cases, the data
+    /// is automatically converted and access succeeds. For example, [`i64`] is always
+    /// converted to [`f64`], and access using String usually invokes a string formatter.
     /// # Errors
     /// Returns an mpv error if the property cannot be read, or if the format
     /// doesn't match the internal format.
@@ -461,7 +461,7 @@ impl Handle {
     ///
     /// # Arguments
     ///
-    /// * `reply_userdata` - An arbitrary 64-bit value used to identify the asynchronous response.
+    /// * `reply` - An arbitrary 64-bit value used to identify the asynchronous response.
     ///   See the section about asynchronous calls in the mpv documentation.
     /// * `name` - The property name as a null-terminated C-string.
     ///
@@ -482,7 +482,7 @@ impl Handle {
 
     /// Registers a notification callback to trigger whenever the given property changes.
     ///
-    /// You will receive updates asynchronously as `MPV_EVENT_PROPERTY_CHANGE` events.
+    /// You will receive updates asynchronously as [`mpv_event_id_MPV_EVENT_PROPERTY_CHANGE`] events.
     ///
     /// # Behavior & Performance
     ///
@@ -505,7 +505,7 @@ impl Handle {
     ///
     /// # Errors
     ///
-    /// Returns a [`crate::Error`] if:
+    /// Returns a [`Error`](`crate::Error`) if:
     /// * The property name contains an internal null byte.
     /// * The `Format` type parameter mapping `T::MPV_FORMAT` is unsupported by `libmpv`.
     /// * Memory allocation fails ([`mpv_error_MPV_ERROR_NOMEM`](`mpv_client_sys::mpv_error_MPV_ERROR_NOMEM`)).
@@ -1098,6 +1098,9 @@ unsafe impl Sync for Client {}
 unsafe impl Send for Client {}
 
 pub struct UninitializedClient(*mut mpv_handle);
+
+unsafe impl Sync for UninitializedClient {}
+unsafe impl Send for UninitializedClient {}
 
 impl Drop for UninitializedClient {
     fn drop(&mut self) {

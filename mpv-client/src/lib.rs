@@ -10,12 +10,12 @@ mod options;
 
 use crate::{
     error::MpvError,
-    format::{Format, Sealed as _},
-    node::{BorrowedMpvNode, ClonedMpvNode, MpvNode},
+    format::Sealed as _,
+    node::{BorrowedMpvNode, MpvNode},
     options::CoercingString,
 };
 pub use error::{Error, Result};
-pub use format::{AsFormat, OsdString};
+pub use format::{AsFormat, Format, OsdString};
 pub use mpv_client_sys::mpv_handle;
 use mpv_client_sys::{
     mpv_abort_async_command, mpv_client_api_version, mpv_client_id, mpv_client_name, mpv_command, mpv_command_async,
@@ -30,11 +30,11 @@ use mpv_client_sys::{
     mpv_event_id_MPV_EVENT_PROPERTY_CHANGE, mpv_event_id_MPV_EVENT_QUEUE_OVERFLOW, mpv_event_id_MPV_EVENT_SEEK,
     mpv_event_id_MPV_EVENT_SET_PROPERTY_REPLY, mpv_event_id_MPV_EVENT_SHUTDOWN, mpv_event_id_MPV_EVENT_START_FILE,
     mpv_event_id_MPV_EVENT_VIDEO_RECONFIG, mpv_event_log_message, mpv_event_name, mpv_event_property,
-    mpv_event_start_file, mpv_event_to_node, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents,
-    mpv_get_property, mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue,
-    mpv_initialize, mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
-    mpv_set_property, mpv_set_property_async, mpv_set_wakeup_callback, mpv_unobserve_property, mpv_wait_async_requests,
-    mpv_wait_event, mpv_wakeup,
+    mpv_event_start_file, mpv_format_MPV_FORMAT_NONE, mpv_free, mpv_free_node_contents, mpv_get_property,
+    mpv_get_property_async, mpv_get_time_ns, mpv_get_time_us, mpv_hook_add, mpv_hook_continue, mpv_initialize,
+    mpv_load_config_file, mpv_node, mpv_observe_property, mpv_request_event, mpv_request_log_messages,
+    mpv_set_property, mpv_set_property_async, mpv_unobserve_property, mpv_wait_async_requests, mpv_wait_event,
+    mpv_wakeup,
 };
 pub use node::Node;
 use serde::de::{self, DeserializeOwned};
@@ -160,7 +160,7 @@ impl Handle {
             .transpose()?;
 
         let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
-        let handle = unsafe { mpv_create_client(self.as_ptr().cast_mut(), name_ptr) };
+        let handle = unsafe { mpv_create_client(self.as_mut_ptr(), name_ptr) };
         if handle.is_null() {
             Err(Error::MpvKnown(MpvError::Nomem))
         } else {
@@ -198,7 +198,7 @@ impl Handle {
             .transpose()?;
 
         let name_ptr = c_name.as_ref().map_or_else(ptr::null, |cstring| cstring.as_ptr());
-        let handle = unsafe { mpv_create_weak_client(self.as_ptr().cast_mut(), name_ptr) };
+        let handle = unsafe { mpv_create_weak_client(self.as_mut_ptr(), name_ptr) };
         if handle.is_null() {
             Err(Error::MpvKnown(MpvError::Nomem))
         } else {
@@ -249,7 +249,7 @@ impl Handle {
             "mismatched EventQueueToken: this token does not belong to this MPV handle!"
         );
 
-        unsafe { Event::from_ptr(mpv_wait_event(self.as_ptr().cast_mut(), timeout)) }
+        unsafe { Event::from_ptr(mpv_wait_event(self.as_mut_ptr(), timeout)) }
     }
 
     /// Return the name of this client handle. Every client has its own unique
@@ -257,7 +257,7 @@ impl Handle {
     #[must_use]
     pub fn name(&self) -> &str {
         unsafe {
-            CStr::from_ptr(mpv_client_name(self.as_ptr().cast_mut()))
+            CStr::from_ptr(mpv_client_name(self.as_mut_ptr()))
                 .to_str()
                 .unwrap_or("unknown")
         }
@@ -277,7 +277,7 @@ impl Handle {
     #[inline]
     #[must_use]
     pub fn id(&self) -> i64 {
-        unsafe { mpv_client_id(self.as_ptr().cast_mut()) }
+        unsafe { mpv_client_id(self.as_mut_ptr()) }
     }
 
     /// Send a command to the player. Commands are the same as those used in
@@ -297,7 +297,7 @@ impl Handle {
             .collect::<result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
-        unsafe { result!(mpv_command(self.as_ptr().cast_mut(), raw_args.as_mut_ptr())) }
+        unsafe { result!(mpv_command(self.as_mut_ptr(), raw_args.as_mut_ptr())) }
     }
 
     /// Send a command and return the result as a [`Node`].
@@ -352,13 +352,7 @@ impl Handle {
             .collect::<result::Result<Vec<CString>, NulError>>()?;
 
         let mut raw_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).chain(iter::once(ptr::null())).collect();
-        unsafe {
-            result!(mpv_command_async(
-                self.as_ptr().cast_mut(),
-                reply,
-                raw_args.as_mut_ptr()
-            ))
-        }
+        unsafe { result!(mpv_command_async(self.as_mut_ptr(), reply, raw_args.as_mut_ptr())) }
     }
 
     /// Sets a property to a given value.
@@ -394,8 +388,8 @@ impl Handle {
     /// *before* the instance is explicitly initialized via `mpv_initialize()`.
     pub fn set_property<T: AsFormat>(&self, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         let name = CString::new(name.into())?;
-        let handle = self.as_ptr().cast_mut();
-        data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
+        let handle = self.as_mut_ptr();
+        data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT.as_u32(), data)) })
     }
 
     /// Set a property asynchronously.
@@ -428,8 +422,16 @@ impl Handle {
     pub fn set_property_async<T: AsFormat>(&self, reply: u64, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         let c_name = CString::new(name.into())?;
         let c_name_ptr = c_name.as_ptr();
-        let handle = self.as_ptr().cast_mut();
-        data.to_mpv(|data| unsafe { result!(mpv_set_property_async(handle, reply, c_name_ptr, T::MPV_FORMAT, data)) })
+        let handle = self.as_mut_ptr();
+        data.to_mpv(|data| unsafe {
+            result!(mpv_set_property_async(
+                handle,
+                reply,
+                c_name_ptr,
+                T::MPV_FORMAT.as_u32(),
+                data
+            ))
+        })
     }
 
     /// Read the value of the given property.
@@ -443,8 +445,8 @@ impl Handle {
     /// doesn't match the internal format.
     pub fn get_property<T: AsFormat>(&self, name: impl Into<Vec<u8>>) -> Result<T> {
         let name = CString::new(name.into())?;
-        let handle = self.as_ptr().cast_mut();
-        T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT, data)) })
+        let handle = self.as_mut_ptr();
+        T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT.as_u32(), data)) })
     }
 
     /// Get a property asynchronously.
@@ -474,8 +476,15 @@ impl Handle {
     /// - The underlying `mpv_get_property_async` call fails to send the request (e.g., if the context is invalid).
     pub fn get_property_async<T: AsFormat>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
         let name = CString::new(name.into())?;
-        let handle = self.as_ptr().cast_mut();
-        unsafe { result!(mpv_get_property_async(handle, reply, name.as_ptr(), T::MPV_FORMAT)) }
+        let handle = self.as_mut_ptr();
+        unsafe {
+            result!(mpv_get_property_async(
+                handle,
+                reply,
+                name.as_ptr(),
+                T::MPV_FORMAT.as_u32()
+            ))
+        }
     }
 
     /// Registers a notification callback to trigger whenever the given property changes.
@@ -525,10 +534,10 @@ impl Handle {
         let name = CString::new(name.into())?;
         unsafe {
             result!(mpv_observe_property(
-                self.as_ptr().cast_mut(),
+                self.as_mut_ptr(),
                 reply,
                 name.as_ptr(),
-                T::MPV_FORMAT
+                T::MPV_FORMAT.as_u32()
             ))
         }
     }
@@ -542,7 +551,7 @@ impl Handle {
     ///
     /// Returns an mpv error code, or 0 on success.
     pub fn unobserve_property(&self, registered_reply: u64) -> Result<i32> {
-        unsafe { result_with_code!(mpv_unobserve_property(self.as_ptr().cast_mut(), registered_reply)) }
+        unsafe { result_with_code!(mpv_unobserve_property(self.as_mut_ptr(), registered_reply)) }
     }
 
     /// A hook is like a synchronous event that blocks the player. You register
@@ -588,7 +597,7 @@ impl Handle {
     /// Returns an mpv error if the hook cannot be added.
     pub fn hook_add(&self, reply: u64, name: impl Into<Vec<u8>>, priority: i32) -> Result<()> {
         let name = CString::new(name.into())?;
-        unsafe { result!(mpv_hook_add(self.as_ptr().cast_mut(), reply, name.as_ptr(), priority)) }
+        unsafe { result!(mpv_hook_add(self.as_mut_ptr(), reply, name.as_ptr(), priority)) }
     }
 
     /// Responds to an `MPV_EVENT_HOOK` event.
@@ -609,7 +618,7 @@ impl Handle {
     ///
     /// Returns an error if the underlying `mpv_hook_continue` call fails.
     pub fn hook_continue(&self, id: u64) -> Result<()> {
-        unsafe { result!(mpv_hook_continue(self.as_ptr().cast_mut(), id)) }
+        unsafe { result!(mpv_hook_continue(self.as_mut_ptr(), id)) }
     }
 
     /// Enable or disable receiving of log messages.
@@ -626,7 +635,7 @@ impl Handle {
     ///
     /// Returns an error if the underlying [`mpv_request_log_messages`] call fails.
     pub fn request_log_messages(&self, min_level: LogLevel) -> Result<()> {
-        let handle = self.as_ptr().cast_mut();
+        let handle = self.as_mut_ptr();
         let c_min_level_ptr = min_level.as_cstr().as_ptr();
         unsafe { result!(mpv_request_log_messages(handle, c_min_level_ptr)) }
     }
@@ -693,7 +702,7 @@ impl Handle {
     /// * [`mpv_client_sys::mpv_error_MPV_ERROR_OPTION_ERROR`] - A fatal error happened while parsing the config file.
     /// * [`std::ffi::NulError`] - Returned if `filename` contains an internal null byte, making it an invalid C-string.
     pub fn load_config_file(&self, filename: impl AsRef<Path>) -> Result<()> {
-        let handle = self.as_ptr().cast_mut();
+        let handle = self.as_mut_ptr();
         let filename = filename.as_ref();
 
         let filename_c = {
@@ -727,13 +736,13 @@ impl Handle {
     /// **Thread Safety:** Safe to be called from mpv render API threads.
     #[must_use]
     pub fn get_time_ns(&self) -> i64 {
-        unsafe { mpv_get_time_ns(self.as_ptr().cast_mut()) }
+        unsafe { mpv_get_time_ns(self.as_mut_ptr()) }
     }
 
     /// Same as [`Handle::get_time_ns`] but in microseconds.
     #[must_use]
     pub fn get_time_us(&self) -> i64 {
-        unsafe { mpv_get_time_us(self.as_ptr().cast_mut()) }
+        unsafe { mpv_get_time_us(self.as_mut_ptr()) }
     }
 
     /// Signals to all async requests with the matching ID to abort.
@@ -827,7 +836,7 @@ impl Handle {
     /// Returns an error if the underlying [`mpv_request_event`] call fails (returns a negative error code),
     /// which can happen if the event API is uninitialized or the event cannot be disabled.
     pub fn request_event(&self, event: u32, enable: bool) -> Result<()> {
-        unsafe { result!(mpv_request_event(self.as_ptr().cast_mut(), event, i32::from(enable))) }
+        unsafe { result!(mpv_request_event(self.as_mut_ptr(), event, i32::from(enable))) }
     }
 
     /// Interrupts the current [`Handle::wait_event()`] call.
@@ -892,11 +901,11 @@ impl Handle {
         result!(unsafe { mpv_del_property(self.as_mut_ptr(), name.as_ptr()) })
     }
 
-    fn event_to_node(event: *mut mpv_event) -> crate::Result<Node> {
-        let mut mpv_node = ClonedMpvNode::default();
-        result!(unsafe { mpv_event_to_node(mpv_node.as_mut_ptr(), event) })?;
-        Ok(mpv_node.to_node())
-    }
+    // fn event_to_node(event: *mut mpv_event) -> crate::Result<Node> {
+    //     let mut mpv_node = ClonedMpvNode::default();
+    //     result!(unsafe { mpv_event_to_node(mpv_node.as_mut_ptr(), event) })?;
+    //     Ok(mpv_node.to_node())
+    // }
 
     /// # Panics
     /// Panics if `expand-path` or `script-opts` commands fail or return unexpected types.
@@ -1305,8 +1314,8 @@ impl Property<'_> {
     }
 
     #[must_use]
-    pub const fn format(&self) -> u32 {
-        unsafe { (*self.0).format }
+    pub const fn format(&self) -> Format {
+        Format::from_u32(unsafe { (*self.0).format })
     }
 
     #[must_use]
@@ -1323,7 +1332,7 @@ impl Property<'_> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let format = Format::from(self.format());
+        let format = self.format();
         let data = match format {
             Format::String => self.data::<String>().map(|s| format!("\"{s}\"")),
             Format::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),

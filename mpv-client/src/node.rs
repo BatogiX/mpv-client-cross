@@ -106,7 +106,7 @@ pub trait MpvNode: Sized {
     fn as_mut_ptr(&mut self) -> *mut mpv_node;
     fn to_node<S: BuildHasher + Default>(self) -> Node<S> {
         let mpv_node = self.as_ref();
-        match Format::from(mpv_node.format) {
+        match Format::from_u32(mpv_node.format) {
             Format::String => {
                 let string = unsafe { mpv_node.u.string };
                 if string.is_null() {
@@ -417,7 +417,7 @@ impl Drop for RawMpvNode {
     fn drop(&mut self) {
         fn drop_mpv_node(mpv_node: &mut mpv_node) {
             unsafe {
-                match Format::from(mpv_node.format) {
+                match Format::from_u32(mpv_node.format) {
                     Format::String => {
                         if mpv_node.u.string.is_null() {
                             return;
@@ -474,6 +474,9 @@ impl Drop for RawMpvNode {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_wrap)]
 fn mpv_node_list_from_node_array<S: BuildHasher + Default>(node_array: Vec<Node<S>>) -> *mut mpv_node_list {
     let num = cmp::min(node_array.len(), i32::MAX as usize) as i32;
     let keys = ptr::null_mut();
@@ -498,6 +501,9 @@ fn mpv_node_list_from_node_array<S: BuildHasher + Default>(node_array: Vec<Node<
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }
 
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_wrap)]
 fn mpv_node_list_from_node_map<S: BuildHasher + Default>(node_map: HashMap<String, Node<S>, S>) -> *mut mpv_node_list {
     let num = cmp::min(node_map.len(), i32::MAX as usize) as i32;
     if num == 0 {

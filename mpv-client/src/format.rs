@@ -25,43 +25,43 @@ pub trait Format: Sealed {
 }
 
 impl Format for () {
-    const MPV_FORMAT: u32 = FormatType::None as u32;
+    const MPV_FORMAT: u32 = FormatType::None.as_u32();
 }
 
 impl Format for String {
-    const MPV_FORMAT: u32 = FormatType::String as u32;
+    const MPV_FORMAT: u32 = FormatType::String.as_u32();
 }
 
 impl Format for OsdString {
-    const MPV_FORMAT: u32 = FormatType::OsdString as u32;
+    const MPV_FORMAT: u32 = FormatType::OsdString.as_u32();
 }
 
 impl Format for bool {
-    const MPV_FORMAT: u32 = FormatType::Bool as u32;
+    const MPV_FORMAT: u32 = FormatType::Bool.as_u32();
 }
 
 impl Format for i64 {
-    const MPV_FORMAT: u32 = FormatType::Int as u32;
+    const MPV_FORMAT: u32 = FormatType::Int.as_u32();
 }
 
 impl Format for f64 {
-    const MPV_FORMAT: u32 = FormatType::Double as u32;
+    const MPV_FORMAT: u32 = FormatType::Double.as_u32();
 }
 
 impl Format for Node {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
+    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
 }
 
 impl Format for Vec<Node> {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
+    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
 }
 
 impl Format for HashMap<String, Node> {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
+    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
 }
 
 impl Format for Vec<u8> {
-    const MPV_FORMAT: u32 = FormatType::Node as u32;
+    const MPV_FORMAT: u32 = FormatType::Node.as_u32();
 }
 
 pub trait Sealed: Sized + Default {
@@ -294,24 +294,41 @@ pub enum FormatType {
     NodeArray = mpv_format_MPV_FORMAT_NODE_ARRAY,
     NodeMap = mpv_format_MPV_FORMAT_NODE_MAP,
     ByteArray = mpv_format_MPV_FORMAT_BYTE_ARRAY,
+    Unknown(u32),
 }
 
-impl TryFrom<u32> for FormatType {
-    type Error = crate::Error;
+impl FormatType {
+    pub const fn as_u32(self) -> u32 {
+        match self {
+            Self::None => mpv_format_MPV_FORMAT_NONE,
+            Self::String => mpv_format_MPV_FORMAT_STRING,
+            Self::OsdString => mpv_format_MPV_FORMAT_OSD_STRING,
+            Self::Bool => mpv_format_MPV_FORMAT_FLAG,
+            Self::Int => mpv_format_MPV_FORMAT_INT64,
+            Self::Double => mpv_format_MPV_FORMAT_DOUBLE,
+            Self::Node => mpv_format_MPV_FORMAT_NODE,
+            Self::NodeArray => mpv_format_MPV_FORMAT_NODE_ARRAY,
+            Self::NodeMap => mpv_format_MPV_FORMAT_NODE_MAP,
+            Self::ByteArray => mpv_format_MPV_FORMAT_BYTE_ARRAY,
+            Self::Unknown(value) => value,
+        }
+    }
+}
 
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            mpv_format_MPV_FORMAT_NONE => Ok(Self::None),
-            mpv_format_MPV_FORMAT_STRING => Ok(Self::String),
-            mpv_format_MPV_FORMAT_OSD_STRING => Ok(Self::OsdString),
-            mpv_format_MPV_FORMAT_FLAG => Ok(Self::Bool),
-            mpv_format_MPV_FORMAT_INT64 => Ok(Self::Int),
-            mpv_format_MPV_FORMAT_DOUBLE => Ok(Self::Double),
-            mpv_format_MPV_FORMAT_NODE => Ok(Self::Node),
-            mpv_format_MPV_FORMAT_NODE_ARRAY => Ok(Self::NodeArray),
-            mpv_format_MPV_FORMAT_NODE_MAP => Ok(Self::NodeMap),
-            mpv_format_MPV_FORMAT_BYTE_ARRAY => Ok(Self::ByteArray),
-            value => Err(crate::Error::UnknownFormat(value)),
+impl From<u32> for FormatType {
+    fn from(v: u32) -> Self {
+        match v {
+            v if v == const { mpv_format_MPV_FORMAT_NONE } => Self::None,
+            v if v == const { mpv_format_MPV_FORMAT_STRING } => Self::String,
+            v if v == const { mpv_format_MPV_FORMAT_OSD_STRING } => Self::OsdString,
+            v if v == const { mpv_format_MPV_FORMAT_FLAG } => Self::Bool,
+            v if v == const { mpv_format_MPV_FORMAT_INT64 } => Self::Int,
+            v if v == const { mpv_format_MPV_FORMAT_DOUBLE } => Self::Double,
+            v if v == const { mpv_format_MPV_FORMAT_NODE } => Self::Node,
+            v if v == const { mpv_format_MPV_FORMAT_NODE_ARRAY } => Self::NodeArray,
+            v if v == const { mpv_format_MPV_FORMAT_NODE_MAP } => Self::NodeMap,
+            v if v == const { mpv_format_MPV_FORMAT_BYTE_ARRAY } => Self::ByteArray,
+            value => Self::Unknown(value),
         }
     }
 }
@@ -329,6 +346,7 @@ impl Display for FormatType {
             Self::NodeArray => f.write_str("NodeArray"),
             Self::NodeMap => f.write_str("NodeMap"),
             Self::ByteArray => f.write_str("ByteArray"),
+            Self::Unknown(value) => write!(f, "Unknown: {value}"),
         }
     }
 }

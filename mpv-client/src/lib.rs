@@ -98,6 +98,7 @@ pub struct Handle {
 /// threads concurrently. The single exception is [`mpv_wait_event`], which is strictly
 /// protected at compile-time by requiring a unique &mut [`EventQueueToken`].
 unsafe impl Sync for Handle {}
+unsafe impl Send for Handle {}
 
 impl Handle {
     /// Safely bind an [`mpv_handle`] pointer to a shared reference and mint its
@@ -1276,25 +1277,20 @@ impl Property<'_> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let format_type = FormatType::try_from(self.format()).ok();
-        let format = format_type.map_or_else(|| format!("Unknown ({})", self.format()), |fmt| format!("{fmt}"));
-        let data = format_type
-            .map_or_else(
-                || Some("None".to_owned()),
-                |v| match v {
-                    FormatType::None => Some("None".to_owned()),
-                    FormatType::String => self.data::<String>().map(|s| format!("\"{s}\"")),
-                    FormatType::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),
-                    FormatType::Bool => self.data::<bool>().map(|v| v.to_string()),
-                    FormatType::Int => self.data::<i64>().map(|v| v.to_string()),
-                    FormatType::Double => self.data::<f64>().map(|v| v.to_string()),
-                    FormatType::Node => self.data::<Node>().map(|v| v.to_string()),
-                    FormatType::NodeArray => todo!(),
-                    FormatType::NodeMap => todo!(),
-                    FormatType::ByteArray => todo!(),
-                },
-            )
-            .unwrap_or_else(|| "None".to_owned());
+        let format = FormatType::from(self.format());
+        let data = match format {
+            FormatType::String => self.data::<String>().map(|s| format!("\"{s}\"")),
+            FormatType::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),
+            FormatType::Bool => self.data::<bool>().map(|v| v.to_string()),
+            FormatType::Int => self.data::<i64>().map(|v| v.to_string()),
+            FormatType::Double => self.data::<f64>().map(|v| v.to_string()),
+            FormatType::Node => self.data::<Node>().map(|v| v.to_string()),
+            FormatType::NodeArray => self.data::<Vec<Node>>().map(|v| format!("{v:#?}")),
+            FormatType::NodeMap => self.data::<HashMap<String, Node>>().map(|v| format!("{v:#?}")),
+            FormatType::ByteArray => self.data::<Vec<u8>>().map(|v| format!("{v:#?}")),
+            FormatType::None | FormatType::Unknown(_) => None,
+        }
+        .unwrap_or_else(|| "None".to_owned());
 
         write!(
             f,

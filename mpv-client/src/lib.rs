@@ -389,7 +389,7 @@ impl Handle {
     pub fn set_property<T: AsFormat>(&self, name: impl Into<Vec<u8>>, data: T) -> Result<()> {
         let name = CString::new(name.into())?;
         let handle = self.as_mut_ptr();
-        data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::MPV_FORMAT.as_u32(), data)) })
+        data.to_mpv(|data| unsafe { result!(mpv_set_property(handle, name.as_ptr(), T::FORMAT.as_u32(), data)) })
     }
 
     /// Set a property asynchronously.
@@ -428,7 +428,7 @@ impl Handle {
                 handle,
                 reply,
                 c_name_ptr,
-                T::MPV_FORMAT.as_u32(),
+                T::FORMAT.as_u32(),
                 data
             ))
         })
@@ -446,7 +446,7 @@ impl Handle {
     pub fn get_property<T: AsFormat>(&self, name: impl Into<Vec<u8>>) -> Result<T> {
         let name = CString::new(name.into())?;
         let handle = self.as_mut_ptr();
-        T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::MPV_FORMAT.as_u32(), data)) })
+        T::from_mpv(|data| unsafe { result!(mpv_get_property(handle, name.as_ptr(), T::FORMAT.as_u32(), data)) })
     }
 
     /// Get a property asynchronously.
@@ -477,14 +477,7 @@ impl Handle {
     pub fn get_property_async<T: AsFormat>(&self, reply: u64, name: impl Into<Vec<u8>>) -> Result<()> {
         let name = CString::new(name.into())?;
         let handle = self.as_mut_ptr();
-        unsafe {
-            result!(mpv_get_property_async(
-                handle,
-                reply,
-                name.as_ptr(),
-                T::MPV_FORMAT.as_u32()
-            ))
-        }
+        unsafe { result!(mpv_get_property_async(handle, reply, name.as_ptr(), T::FORMAT.as_u32())) }
     }
 
     /// Registers a notification callback to trigger whenever the given property changes.
@@ -515,7 +508,7 @@ impl Handle {
     /// Returns a [`crate::Error`] if:
     /// * The property name contains an internal null byte.
     /// * The `Format` type parameter mapping `T::MPV_FORMAT` is unsupported by `libmpv`.
-    /// * Memory allocation fails (`MPV_ERROR_NOMEM`).
+    /// * Memory allocation fails ([`mpv_error_MPV_ERROR_NOMEM`](`mpv_client_sys::mpv_error_MPV_ERROR_NOMEM`)).
     ///
     /// # Warnings
     ///
@@ -523,7 +516,7 @@ impl Handle {
     ///   the property yourself from this handle. Take precautions to prevent infinite
     ///   cascading feedback loops.
     /// * **Error Fallback:** If a property becomes unavailable or errors out during extraction,
-    ///   the emitted event format drops to `MPV_FORMAT_NONE` regardless of `T`, rendering the
+    ///   the emitted event format drops to [`mpv_format_MPV_FORMAT_NONE`] regardless of `T`, rendering the
     ///   underlying event data pointer invalid.
     ///
     /// # Notes
@@ -537,7 +530,7 @@ impl Handle {
                 self.as_mut_ptr(),
                 reply,
                 name.as_ptr(),
-                T::MPV_FORMAT.as_u32()
+                T::FORMAT.as_u32()
             ))
         }
     }
@@ -576,7 +569,7 @@ impl Handle {
     /// same hook). If this can happen for a specific hook type, it will be
     /// explicitly documented in the manpage.
     ///
-    /// Only the `mpv_handle` on which this was called will receive the hook events,
+    /// Only the [`mpv_handle`] on which this was called will receive the hook events,
     /// or can "continue" them.
     ///
     /// # Arguments
@@ -616,7 +609,7 @@ impl Handle {
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying `mpv_hook_continue` call fails.
+    /// Returns an error if the underlying [`Handle::hook_continue`] call fails.
     pub fn hook_continue(&self, id: u64) -> Result<()> {
         unsafe { result!(mpv_hook_continue(self.as_mut_ptr(), id)) }
     }
@@ -629,7 +622,7 @@ impl Handle {
     ///
     /// # Arguments
     ///
-    /// * `min_level` - Minimal log level. `LogLevel::None` disables all messages.
+    /// * `min_level` - Minimal log level. [`LogLevel::None`] disables all messages.
     ///
     /// # Errors
     ///
@@ -652,7 +645,7 @@ impl Handle {
     ///
     /// # Arguments
     ///
-    /// * `error` - The error number corresponding to an `mpv_error`.
+    /// * `error` - The error number corresponding to an [`mpv_error`](`mpv_client_sys::mpv_error`).
     ///
     /// # Returns
     ///
@@ -698,10 +691,10 @@ impl Handle {
     ///
     /// Returns an error if the configuration file could not be loaded or parsed correctly.
     /// Common error variants include:
-    /// * [`mpv_client_sys::mpv_error_MPV_ERROR_INVALID_PARAMETER`] - The file was not found.
-    /// * [`mpv_client_sys::mpv_error_MPV_ERROR_OPTION_ERROR`] - A fatal error happened while parsing the config file.
-    /// * [`std::ffi::NulError`] - Returned if `filename` contains an internal null byte, making it an invalid C-string.
-    pub fn load_config_file(&self, filename: impl AsRef<Path>) -> Result<()> {
+    /// * [`mpv_error_MPV_ERROR_INVALID_PARAMETER`](`mpv_client_sys::mpv_error_MPV_ERROR_INVALID_PARAMETER`) - The file was not found.
+    /// * [`mpv_error_MPV_ERROR_OPTION_ERROR`](`mpv_client_sys::mpv_error_MPV_ERROR_OPTION_ERROR`) - A fatal error happened while parsing the config file.
+    /// * [`NulError`](`std::ffi::NulError`) - Returned if `filename` contains an internal null byte, making it an invalid C-string.
+    pub fn load_config_file(&self, filename: impl AsRef<Path>) -> crate::Result<()> {
         let handle = self.as_mut_ptr();
         let filename = filename.as_ref();
 
@@ -1321,7 +1314,7 @@ impl Property<'_> {
     #[must_use]
     pub fn data<T: AsFormat>(&self) -> Option<T> {
         unsafe {
-            if self.format() == T::MPV_FORMAT {
+            if self.format() == T::FORMAT {
                 Some(T::from_ptr((*self.0).data))
             } else {
                 None

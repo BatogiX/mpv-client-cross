@@ -23,47 +23,47 @@ use std::{
 
 #[allow(private_bounds)]
 pub trait AsFormat: Sealed {
-    const MPV_FORMAT: Format;
+    const FORMAT: Format;
 }
 
 impl AsFormat for () {
-    const MPV_FORMAT: Format = Format::None;
+    const FORMAT: Format = Format::None;
 }
 
 impl AsFormat for String {
-    const MPV_FORMAT: Format = Format::String;
+    const FORMAT: Format = Format::String;
 }
 
 impl AsFormat for OsdString {
-    const MPV_FORMAT: Format = Format::OsdString;
+    const FORMAT: Format = Format::OsdString;
 }
 
 impl AsFormat for bool {
-    const MPV_FORMAT: Format = Format::Bool;
+    const FORMAT: Format = Format::Bool;
 }
 
 impl AsFormat for i64 {
-    const MPV_FORMAT: Format = Format::Int;
+    const FORMAT: Format = Format::Int;
 }
 
 impl AsFormat for f64 {
-    const MPV_FORMAT: Format = Format::Double;
+    const FORMAT: Format = Format::Double;
 }
 
 impl<S: BuildHasher + Default> AsFormat for Node<S> {
-    const MPV_FORMAT: Format = Format::Node;
+    const FORMAT: Format = Format::Node;
 }
 
 impl<S: BuildHasher + Default> AsFormat for Vec<Node<S>> {
-    const MPV_FORMAT: Format = Format::Node;
+    const FORMAT: Format = Format::Node;
 }
 
 impl<S: BuildHasher + Default> AsFormat for HashMap<String, Node<S>, S> {
-    const MPV_FORMAT: Format = Format::Node;
+    const FORMAT: Format = Format::Node;
 }
 
 impl AsFormat for Vec<u8> {
-    const MPV_FORMAT: Format = Format::Node;
+    const FORMAT: Format = Format::Node;
 }
 
 pub trait Sealed: Sized + Default {

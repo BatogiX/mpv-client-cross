@@ -120,7 +120,7 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "mpv-client-cross"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "log",
  "mpv-client-cross-macros",
@@ -131,7 +131,7 @@ dependencies = [
 
 [[package]]
 name = "mpv-client-cross-macros"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "mpv-client-cross-sys"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "bindgen",
  "prettyplease",

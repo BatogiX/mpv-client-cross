@@ -8,7 +8,7 @@ authors = ["Kevin Gavrois <kevin@gavrois.fr>", "BatogiX"]
 edition = "2024"
 repository = "https://github.com/BatogiX/mpv-client-cross"
 license = "GPL-3.0"
-version = "3.0.0"
+version = "3.0.1"
 
 [workspace.dependencies]
 mpv-client-sys = { package = "mpv-client-cross-sys", version = "3", path = "mpv-client-sys" }

@@ -1320,54 +1320,27 @@ impl Property<'_> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Property {{\n    name: \"{}\"\n    format: {}\n    data: ",
-            self.name(),
-            self.format()
-        )?;
+        fn write_opt<T: fmt::Debug>(f: &mut fmt::Formatter, value: Option<T>) -> fmt::Result {
+            match value {
+                Some(v) => write!(f, "{v:?}"),
+                None => f.write_str("None"),
+            }
+        }
+
+        write!(f, "name: {}, format: {}, data: ", self.name(), self.format())?;
 
         match self.format() {
-            Format::String => match self.data::<String>() {
-                Some(s) => write!(f, "\"{s}\""),
-                None => f.write_str("None"),
-            },
-            Format::OsdString => match self.data::<OsdString>() {
-                Some(s) => write!(f, "\"{}\"", s.0),
-                None => f.write_str("None"),
-            },
-            Format::Bool => match self.data::<bool>() {
-                Some(v) => write!(f, "{v}"),
-                None => f.write_str("None"),
-            },
-            Format::Int => match self.data::<i64>() {
-                Some(v) => write!(f, "{v}"),
-                None => f.write_str("None"),
-            },
-            Format::Double => match self.data::<f64>() {
-                Some(v) => write!(f, "{v}"),
-                None => f.write_str("None"),
-            },
-            Format::Node => match self.data::<Node>() {
-                Some(v) => write!(f, "{v}"),
-                None => f.write_str("None"),
-            },
-            Format::NodeArray => match self.data::<Vec<Node>>() {
-                Some(v) => write!(f, "{v:#?}"),
-                None => f.write_str("None"),
-            },
-            Format::NodeMap => match self.data::<HashMap<String, Node>>() {
-                Some(v) => write!(f, "{v:#?}"),
-                None => f.write_str("None"),
-            },
-            Format::ByteArray => match self.data::<Vec<u8>>() {
-                Some(v) => write!(f, "{v:#?}"),
-                None => f.write_str("None"),
-            },
+            Format::String => write_opt(f, self.data::<String>()),
+            Format::OsdString => write_opt(f, self.data::<OsdString>()),
+            Format::Bool => write_opt(f, self.data::<bool>()),
+            Format::Int => write_opt(f, self.data::<i64>()),
+            Format::Double => write_opt(f, self.data::<f64>()),
+            Format::Node => write_opt(f, self.data::<Node>()),
+            Format::NodeArray => write_opt(f, self.data::<Vec<Node>>()),
+            Format::NodeMap => write_opt(f, self.data::<HashMap<String, Node>>()),
+            Format::ByteArray => write_opt(f, self.data::<Vec<u8>>()),
             Format::None | Format::Unknown(_) => f.write_str("None"),
-        }?;
-
-        f.write_str("\n}")
+        }
     }
 }
 
@@ -1431,7 +1404,7 @@ impl StartFile<'_> {
 
 impl fmt::Display for StartFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.playlist_entry_id())
+        write!(f, "playlist_entry_id: {}", self.playlist_entry_id())
     }
 }
 

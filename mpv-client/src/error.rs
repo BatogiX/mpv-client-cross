@@ -15,10 +15,10 @@ pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
-    #[error("[{}]: {}", *.0 as i32, Handle::error_string(*.0 as i32))]
+    #[error("{} ({})", Handle::error_string(*.0 as i32), *.0 as i32, )]
     MpvKnown(MpvError),
 
-    #[error("[{}]: {}", .0, Handle::error_string(*.0))]
+    #[error("{} ({})", Handle::error_string(*.0), .0,)]
     MpvUnknown(i32),
 
     #[error("{0}")]

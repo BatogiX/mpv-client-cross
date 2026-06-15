@@ -19,7 +19,7 @@ pub enum Node<S = RandomState> {
     Int(i64),
     Double(f64),
     Bool(bool),
-    ByteArray(Vec<u8>),
+    Bytes(Vec<u8>),
     Array(Vec<Self>),
     Map(HashMap<String, Self, S>),
 }
@@ -44,8 +44,8 @@ impl Node<RandomState> {
         Self::Bool(b)
     }
 
-    pub fn byte_array(ba: impl Into<Vec<u8>>) -> Self {
-        Self::ByteArray(ba.into())
+    pub fn bytes(ba: impl Into<Vec<u8>>) -> Self {
+        Self::Bytes(ba.into())
     }
 
     pub fn array(a: impl Into<Vec<Self>>) -> Self {
@@ -80,7 +80,7 @@ impl Display for Node {
             Self::Int(v) => write!(f, "{v}"),
             Self::Double(v) => write!(f, "{v}"),
             Self::Bool(v) => write!(f, "{v}"),
-            Self::ByteArray(bytes) => {
+            Self::Bytes(bytes) => {
                 f.write_str("[")?;
                 fmt_join(f, bytes, |b, f| write!(f, "{b}"))?;
                 f.write_str("]")
@@ -133,7 +133,7 @@ impl MpvNodeRef<'_> {
             Format::Int => Node::Int(unsafe { self.u.int64 }),
             Format::Double => Node::Double(unsafe { self.u.double_ }),
             Format::Bool => Node::Bool(unsafe { self.u.flag } != 0),
-            Format::NodeArray => {
+            Format::Array => {
                 let list = unsafe { self.u.list };
                 if list.is_null() {
                     return Node::Array(Vec::default());
@@ -151,7 +151,7 @@ impl MpvNodeRef<'_> {
 
                 Node::Array(values.iter().map(|raw_node| MpvNodeRef(raw_node).to_node()).collect())
             }
-            Format::NodeMap => {
+            Format::Map => {
                 let list = unsafe { self.u.list };
                 if list.is_null() {
                     return Node::Map(HashMap::default());
@@ -190,10 +190,10 @@ impl MpvNodeRef<'_> {
 
                 Node::Map(map)
             }
-            Format::ByteArray => {
+            Format::Bytes => {
                 let ba = unsafe { self.u.ba };
                 if ba.is_null() {
-                    return Node::ByteArray(Vec::default());
+                    return Node::Bytes(Vec::default());
                 }
 
                 let ba = unsafe { &*self.u.ba };
@@ -206,7 +206,7 @@ impl MpvNodeRef<'_> {
                     unsafe { slice::from_raw_parts(data.cast(), size) }
                 };
 
-                Node::ByteArray(data.to_vec())
+                Node::Bytes(data.to_vec())
             }
             _ => Node::None,
         }
@@ -357,15 +357,15 @@ impl MpvNodeOwned {
                 mpv_node.u.flag = i32::from(bool);
             }
             Node::Array(node_array) => {
-                mpv_node.format = Format::NodeArray.as_u32();
+                mpv_node.format = Format::Array.as_u32();
                 mpv_node.u.list = MpvNodeListOwned::from_array(node_array);
             }
             Node::Map(node_map) => {
-                mpv_node.format = Format::NodeMap.as_u32();
+                mpv_node.format = Format::Map.as_u32();
                 mpv_node.u.list = MpvNodeListOwned::from_map(node_map);
             }
-            Node::ByteArray(byte_array) => {
-                mpv_node.format = Format::ByteArray.as_u32();
+            Node::Bytes(byte_array) => {
+                mpv_node.format = Format::Bytes.as_u32();
                 mpv_node.u.ba = MpvNodeByteArrayOwned::from_byte_array(byte_array);
             }
         }
@@ -399,13 +399,13 @@ impl Drop for MpvNodeOwned {
                         drop(CString::from_raw(string_ptr));
                     }
                 }
-                Format::NodeArray | Format::NodeMap => {
+                Format::Array | Format::Map => {
                     let list_ptr = self.0.u.list;
                     if !list_ptr.is_null() {
                         drop(MpvNodeListOwned::from_raw(list_ptr));
                     }
                 }
-                Format::ByteArray => {
+                Format::Bytes => {
                     let ba_ptr = self.0.u.ba;
                     if !ba_ptr.is_null() {
                         drop(MpvNodeByteArrayOwned::from_raw(ba_ptr));

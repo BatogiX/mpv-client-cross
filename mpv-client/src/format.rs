@@ -253,7 +253,7 @@ impl<S: BuildHasher + Default> Sealed for Node<S> {
         match node {
             Node::None => Ok(Self::None),
             Node::String(s) => Ok(Self::String(s)),
-            Node::ByteArray(b) => Ok(Self::ByteArray(b)),
+            Node::Bytes(b) => Ok(Self::Bytes(b)),
             Node::Int(i) => Ok(Self::Int(i)),
             Node::Double(d) => Ok(Self::Double(d)),
             Node::Bool(b) => Ok(Self::Bool(b)),
@@ -347,7 +347,7 @@ impl Sealed for Vec<u8> {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
-        let mut mpv_node = MpvNodeOwned::from_node(Node::<RandomState>::ByteArray(self));
+        let mut mpv_node = MpvNodeOwned::from_node(Node::<RandomState>::Bytes(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
@@ -358,7 +358,7 @@ impl Sealed for Vec<u8> {
     }
 
     fn from_node(node: Node) -> crate::Result<Self> {
-        if let Node::ByteArray(bytes) = node {
+        if let Node::Bytes(bytes) = node {
             Ok(bytes)
         } else {
             Err(crate::Error::FormatMismatch())
@@ -383,9 +383,9 @@ pub enum Format {
     Int = mpv_format_MPV_FORMAT_INT64,
     Double = mpv_format_MPV_FORMAT_DOUBLE,
     Node = mpv_format_MPV_FORMAT_NODE,
-    NodeArray = mpv_format_MPV_FORMAT_NODE_ARRAY,
-    NodeMap = mpv_format_MPV_FORMAT_NODE_MAP,
-    ByteArray = mpv_format_MPV_FORMAT_BYTE_ARRAY,
+    Array = mpv_format_MPV_FORMAT_NODE_ARRAY,
+    Map = mpv_format_MPV_FORMAT_NODE_MAP,
+    Bytes = mpv_format_MPV_FORMAT_BYTE_ARRAY,
     Unknown(u32),
 }
 
@@ -400,9 +400,9 @@ impl Format {
             Self::Int => mpv_format_MPV_FORMAT_INT64,
             Self::Double => mpv_format_MPV_FORMAT_DOUBLE,
             Self::Node => mpv_format_MPV_FORMAT_NODE,
-            Self::NodeArray => mpv_format_MPV_FORMAT_NODE_ARRAY,
-            Self::NodeMap => mpv_format_MPV_FORMAT_NODE_MAP,
-            Self::ByteArray => mpv_format_MPV_FORMAT_BYTE_ARRAY,
+            Self::Array => mpv_format_MPV_FORMAT_NODE_ARRAY,
+            Self::Map => mpv_format_MPV_FORMAT_NODE_MAP,
+            Self::Bytes => mpv_format_MPV_FORMAT_BYTE_ARRAY,
             Self::Unknown(value) => value,
         }
     }
@@ -417,9 +417,9 @@ impl Format {
             mpv_format_MPV_FORMAT_INT64 => Self::Int,
             mpv_format_MPV_FORMAT_DOUBLE => Self::Double,
             mpv_format_MPV_FORMAT_NODE => Self::Node,
-            mpv_format_MPV_FORMAT_NODE_ARRAY => Self::NodeArray,
-            mpv_format_MPV_FORMAT_NODE_MAP => Self::NodeMap,
-            mpv_format_MPV_FORMAT_BYTE_ARRAY => Self::ByteArray,
+            mpv_format_MPV_FORMAT_NODE_ARRAY => Self::Array,
+            mpv_format_MPV_FORMAT_NODE_MAP => Self::Map,
+            mpv_format_MPV_FORMAT_BYTE_ARRAY => Self::Bytes,
             value => Self::Unknown(value),
         }
     }
@@ -435,9 +435,9 @@ impl Display for Format {
             Self::Int => f.write_str("Int"),
             Self::Double => f.write_str("Double"),
             Self::Node => f.write_str("Node"),
-            Self::NodeArray => f.write_str("NodeArray"),
-            Self::NodeMap => f.write_str("NodeMap"),
-            Self::ByteArray => f.write_str("ByteArray"),
+            Self::Array => f.write_str("Array"),
+            Self::Map => f.write_str("Map"),
+            Self::Bytes => f.write_str("Bytes"),
             Self::Unknown(value) => write!(f, "Unknown: {value}"),
         }
     }

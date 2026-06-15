@@ -1337,9 +1337,9 @@ impl fmt::Display for Property<'_> {
             Format::Int => write_opt(f, self.data::<i64>()),
             Format::Double => write_opt(f, self.data::<f64>()),
             Format::Node => write_opt(f, self.data::<Node>()),
-            Format::NodeArray => write_opt(f, self.data::<Vec<Node>>()),
-            Format::NodeMap => write_opt(f, self.data::<HashMap<String, Node>>()),
-            Format::ByteArray => write_opt(f, self.data::<Vec<u8>>()),
+            Format::Array => write_opt(f, self.data::<Vec<Node>>()),
+            Format::Map => write_opt(f, self.data::<HashMap<String, Node>>()),
+            Format::Bytes => write_opt(f, self.data::<Vec<u8>>()),
             Format::None | Format::Unknown(_) => f.write_str("None"),
         }
     }

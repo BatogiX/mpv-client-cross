@@ -224,9 +224,8 @@ impl BorrowedMpvNode<'_> {
             return Vec::default();
         }
 
-        #[allow(clippy::cast_sign_loss)]
-        let num = num as usize;
-        let values = unsafe { slice::from_raw_parts(values, num) };
+        let len = usize::try_from(num).unwrap_or(0);
+        let values = unsafe { slice::from_raw_parts(values, len) };
 
         values
             .iter()
@@ -248,12 +247,11 @@ impl BorrowedMpvNode<'_> {
             return HashMap::default();
         }
 
-        #[allow(clippy::cast_sign_loss)]
-        let num = num as usize;
-        let keys = unsafe { slice::from_raw_parts(keys, num) };
-        let values = unsafe { slice::from_raw_parts(values, num) };
+        let len = usize::try_from(num).unwrap_or(0);
+        let keys = unsafe { slice::from_raw_parts(keys, len) };
+        let values = unsafe { slice::from_raw_parts(values, len) };
 
-        let mut node_map = HashMap::with_capacity_and_hasher(num, S::default());
+        let mut node_map = HashMap::with_capacity_and_hasher(len, S::default());
         for (key, value) in keys.iter().zip(values) {
             if key.is_null() {
                 return HashMap::default();

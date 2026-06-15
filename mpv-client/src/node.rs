@@ -1,7 +1,6 @@
 use core::fmt;
 use mpv_client_sys::{mpv_byte_array, mpv_node, mpv_node__bindgen_ty_1, mpv_node_list};
 use std::{
-    cmp,
     collections::HashMap,
     ffi::{CStr, CString, c_void},
     fmt::Display,
@@ -499,7 +498,7 @@ impl Drop for OwnedMpvNodeList {
     fn drop(&mut self) {
         unsafe {
             let list = Box::from_raw(self.0);
-            let len = list.num as usize;
+            let len = usize::try_from(list.num).unwrap_or(0);
 
             if !list.keys.is_null() {
                 let keys_slice = ptr::slice_from_raw_parts_mut(list.keys, len);

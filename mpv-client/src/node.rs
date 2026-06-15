@@ -419,15 +419,13 @@ impl Drop for OwnedMpvNode {
         }
     }
 }
-#[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
-#[allow(clippy::cast_possible_wrap)]
+
 fn mpv_node_list_from_node_array<S: BuildHasher + Default>(node_array: Vec<Node<S>>) -> *mut mpv_node_list {
-    let num = cmp::min(node_array.len(), i32::MAX as usize) as i32;
+    let len = node_array.len().min(i32::MAX as usize);
     let keys = ptr::null_mut();
-    if num == 0 {
+    if len == 0 {
         return Box::into_raw(Box::new(mpv_node_list {
-            num,
+            num: 0,
             values: ptr::null_mut(),
             keys,
         }));
@@ -436,24 +434,22 @@ fn mpv_node_list_from_node_array<S: BuildHasher + Default>(node_array: Vec<Node<
     let values = Box::into_raw(
         node_array
             .into_iter()
-            .take(num as usize)
+            .take(len)
             .map(OwnedMpvNode::from_node)
             .collect::<Vec<OwnedMpvNode>>()
             .into_boxed_slice(),
     )
     .cast();
 
+    let num = i32::try_from(len).unwrap_or(i32::MAX);
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }
 
-#[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
-#[allow(clippy::cast_possible_wrap)]
 fn mpv_node_list_from_node_map<S: BuildHasher + Default>(node_map: HashMap<String, Node<S>, S>) -> *mut mpv_node_list {
-    let num = cmp::min(node_map.len(), i32::MAX as usize) as i32;
-    if num == 0 {
+    let len = node_map.len().min(i32::MAX as usize);
+    if len == 0 {
         return Box::into_raw(Box::new(mpv_node_list {
-            num,
+            num: 0,
             values: ptr::null_mut(),
             keys: ptr::null_mut(),
         }));
@@ -461,7 +457,7 @@ fn mpv_node_list_from_node_map<S: BuildHasher + Default>(node_map: HashMap<Strin
 
     let (keys, values): (Vec<*mut i8>, Vec<OwnedMpvNode>) = node_map
         .into_iter()
-        .take(num as usize)
+        .take(len)
         .map(|(key, node)| {
             (
                 CString::new(key).expect("CString::new() failed").into_raw(),
@@ -475,6 +471,7 @@ fn mpv_node_list_from_node_map<S: BuildHasher + Default>(node_map: HashMap<Strin
         Box::into_raw(values.into_boxed_slice()).cast(),
     );
 
+    let num = i32::try_from(len).unwrap_or(i32::MAX);
     Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
 }
 

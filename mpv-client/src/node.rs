@@ -528,12 +528,14 @@ impl MpvNodeByteArrayOwned {
 
 impl Drop for MpvNodeByteArrayOwned {
     fn drop(&mut self) {
-        unsafe {
-            let ba = Box::from_raw(self.0);
-            if !ba.data.is_null() {
-                let data_slice = ptr::slice_from_raw_parts_mut(ba.data.cast::<u8>(), ba.size);
-                drop(Box::from_raw(data_slice));
-            }
+        if self.0.is_null() {
+            return;
+        }
+
+        let ba = unsafe { Box::from_raw(self.0) };
+        if !ba.data.is_null() {
+            let data_ptr = ptr::slice_from_raw_parts_mut(ba.data.cast::<u8>(), ba.size);
+            drop(unsafe { Box::from_raw(data_ptr) });
         }
     }
 }

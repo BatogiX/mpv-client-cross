@@ -287,11 +287,11 @@ impl BorrowedMpvNode<'_> {
     }
 }
 
-impl<'a> Deref for BorrowedMpvNode<'a> {
-    type Target = &'a mpv_node;
+impl Deref for BorrowedMpvNode<'_> {
+    type Target = mpv_node;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 

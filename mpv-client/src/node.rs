@@ -99,8 +99,14 @@ impl Display for Node {
     }
 }
 
-/// Cleaned by libmpv.
+impl<'a, S: BuildHasher + Default> From<BorrowedMpvNode<'a>> for Node<S> {
+    fn from(borrowed: BorrowedMpvNode<'a>) -> Self {
+        borrowed.to_node()
+    }
+}
+
 /// Created by libmpv.
+/// Cleaned by libmpv.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct BorrowedMpvNode<'a>(pub &'a mpv_node);
@@ -292,8 +298,8 @@ impl Deref for BorrowedMpvNode<'_> {
     }
 }
 
-/// Must be cleaned on drop via [`free_node_contents()`](Handle::free_node_contents()).
 /// Created by libmpv.
+/// Must be cleaned on drop via [`free_node_contents()`](Handle::free_node_contents()).
 #[repr(transparent)]
 pub struct ClonedMpvNode(mpv_node);
 
@@ -322,18 +328,14 @@ impl Drop for ClonedMpvNode {
     }
 }
 
-/// Must be cleaned on drop manually.
 /// Created manually
+/// Must be cleaned on drop manually.
 #[repr(transparent)]
 pub struct OwnedMpvNode(mpv_node);
 
 impl OwnedMpvNode {
     pub const fn as_mut_ptr(&mut self) -> *mut mpv_node {
         &raw mut self.0
-    }
-
-    pub const fn as_ref(&self) -> BorrowedMpvNode<'_> {
-        BorrowedMpvNode(&self.0)
     }
 
     pub fn from_node<S: BuildHasher + Default>(node: Node<S>) -> Self {
@@ -386,6 +388,12 @@ impl Default for OwnedMpvNode {
             format: Format::None.as_u32(),
             u: mpv_node__bindgen_ty_1 { int64: 0 },
         })
+    }
+}
+
+impl<S: BuildHasher + Default> From<Node<S>> for OwnedMpvNode {
+    fn from(node: Node<S>) -> Self {
+        Self::from_node(node)
     }
 }
 

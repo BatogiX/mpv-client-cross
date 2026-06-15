@@ -300,11 +300,13 @@ impl Handle {
     /// # Errors
     /// Returns an mpv error if the command fails, or if the result cannot be
     /// converted to a [`Node`].
-    pub fn command_ret<I, S>(&self, args: I) -> Result<Node>
+    pub fn command_ret<I, S, T>(&self, args: I) -> Result<T>
     where
         I: IntoIterator<Item = S>,
         S: Into<Vec<u8>>,
+        T: AsFormat,
     {
+        let handle = self.as_mut_ptr();
         let c_args: Vec<CString> = args
             .into_iter()
             .map(|s| CString::new(s.into()))
@@ -317,7 +319,9 @@ impl Handle {
             .collect();
 
         let args = c_args_raw.as_mut_ptr();
-        Node::from_mpv(|result| result!(unsafe { mpv_command_ret(self.as_mut_ptr(), args, result.cast()) }))
+        let node: Node = Node::from_mpv(|result| result!(unsafe { mpv_command_ret(handle, args, result.cast()) }))?;
+
+        T::from_node(node)
     }
 
     /// Same as [`Handle::command`], but run the command asynchronously.
@@ -905,12 +909,9 @@ impl Handle {
         let plugin_name = self.name();
         let mut raw_map = HashMap::new();
 
-        let Node::String(config_dir) = self
+        let config_dir: String = self
             .command_ret(["expand-path", "~~/"])
-            .expect("'expand-path ~~/' failed")
-        else {
-            unreachable!("'expand-path ~~/' always return a String variant")
-        };
+            .expect("'expand-path ~~/' failed");
 
         let config_path = PathBuf::from(config_dir)
             .join("script-opts")

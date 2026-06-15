@@ -76,6 +76,8 @@ pub trait Sealed: Sized + Default {
     /// # Errors
     /// If the FFI callback fails or the stored value cannot be recovered.
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self>;
+
+    fn from_node(node: Node) -> crate::Result<Self>;
 }
 
 impl Sealed for () {
@@ -87,6 +89,10 @@ impl Sealed for () {
 
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         fun(ptr::null_mut())
+    }
+
+    fn from_node(_node: Node) -> crate::Result<Self> {
+        Ok(())
     }
 }
 
@@ -121,6 +127,14 @@ impl Sealed for String {
         let _mpv_string = ClonedMpvString(mpv_string_ptr);
         Ok(unsafe { CStr::from_ptr(mpv_string_ptr) }.to_string_lossy().into_owned())
     }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::String(string) = node {
+            Ok(string)
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
+    }
 }
 
 impl Sealed for OsdString {
@@ -136,6 +150,10 @@ impl Sealed for OsdString {
     /// Returns an error if the FFI callback fails or the returned pointer is null/invalid UTF-8.
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         Ok(Self(String::from_mpv(fun)?))
+    }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        Ok(Self(String::from_node(node)?))
     }
 }
 
@@ -153,6 +171,14 @@ impl Sealed for bool {
         let mut data = c_int::from(Self::default());
         fun((&raw mut data).cast::<c_void>()).map(|()| data != 0)
     }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::Bool(boolean) = node {
+            Ok(boolean)
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
+    }
 }
 
 impl Sealed for i64 {
@@ -169,6 +195,14 @@ impl Sealed for i64 {
         let mut data = Self::default();
         fun((&raw mut data).cast::<c_void>()).map(|()| data)
     }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::Int(int64) = node {
+            Ok(int64)
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
+    }
 }
 
 impl Sealed for f64 {
@@ -184,6 +218,14 @@ impl Sealed for f64 {
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
         let mut data = Self::default();
         fun((&raw mut data).cast::<c_void>()).map(|()| data)
+    }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::Double(float64) = node {
+            Ok(float64)
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
     }
 }
 
@@ -206,6 +248,31 @@ impl<S: BuildHasher + Default> Sealed for Node<S> {
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node())
     }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        match node {
+            Node::None => Ok(Self::None),
+            Node::String(s) => Ok(Self::String(s)),
+            Node::ByteArray(b) => Ok(Self::ByteArray(b)),
+            Node::Int(i) => Ok(Self::Int(i)),
+            Node::Double(d) => Ok(Self::Double(d)),
+            Node::Bool(b) => Ok(Self::Bool(b)),
+            Node::Array(a) => {
+                let vec = a
+                    .into_iter()
+                    .map(Sealed::from_node)
+                    .collect::<crate::Result<Vec<Self>>>()?;
+                Ok(Self::Array(vec))
+            }
+            Node::Map(m) => {
+                let mut map = HashMap::with_capacity_and_hasher(m.len(), S::default());
+                for (k, v) in m {
+                    map.insert(k, Sealed::from_node(v)?);
+                }
+                Ok(Self::Map(map))
+            }
+        }
+    }
 }
 
 impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
@@ -226,6 +293,14 @@ impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
         let mut mpv_node = MpvNodeCloned::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node_array())
+    }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::Array(array) = node {
+            array.into_iter().map(Sealed::from_node).collect()
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
     }
 }
 
@@ -248,6 +323,18 @@ impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node_map())
     }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::Map(map) = node {
+            let mut new_map = Self::with_capacity_and_hasher(map.len(), S::default());
+            for (k, v) in map {
+                new_map.insert(k, Sealed::from_node(v)?);
+            }
+            Ok(new_map)
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
+    }
 }
 
 impl Sealed for Vec<u8> {
@@ -268,6 +355,14 @@ impl Sealed for Vec<u8> {
         let mut mpv_node = MpvNodeCloned::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node_byte_array())
+    }
+
+    fn from_node(node: Node) -> crate::Result<Self> {
+        if let Node::ByteArray(bytes) = node {
+            Ok(bytes)
+        } else {
+            Err(crate::Error::FormatMismatch())
+        }
     }
 }
 

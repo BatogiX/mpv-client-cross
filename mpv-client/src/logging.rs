@@ -1,4 +1,4 @@
-use crate::{Handle, Node};
+use crate::Handle;
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::{
     fs::File,
@@ -66,13 +66,9 @@ pub fn init(mp: &Handle) -> Result<(), SetLoggerError> {
     let module = mp.name().to_owned();
     let path_log_file: String = mp.get_property("log-file").expect("log-file property must exist");
     let path_log_file = if path_log_file.starts_with('~') {
-        let node = mp
+        let expanded: String = mp
             .command_ret(["expand-path", &path_log_file])
             .expect("expand-path must succeed");
-
-        let Node::String(expanded) = node else {
-            unreachable!("'expand-path' always returns a String variant")
-        };
 
         Some(expanded)
     } else if path_log_file.is_empty() {

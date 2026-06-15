@@ -483,21 +483,26 @@ impl MpvNodeListOwned {
 
 impl Drop for MpvNodeListOwned {
     fn drop(&mut self) {
-        unsafe {
-            let list = Box::from_raw(self.0);
-            let len = usize::try_from(list.num).unwrap_or(0);
+        if self.0.is_null() {
+            return;
+        }
 
-            if !list.keys.is_null() {
-                for &key in &Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)) {
-                    if !key.is_null() {
-                        drop(CString::from_raw(key));
-                    }
+        let list = unsafe { Box::from_raw(self.0) };
+        let len = usize::try_from(list.num).unwrap_or(0);
+
+        if !list.keys.is_null() {
+            let keys_ptr = ptr::slice_from_raw_parts_mut(list.keys.cast::<*mut i8>(), len);
+            let keys = unsafe { Box::from_raw(keys_ptr) };
+            for &key in &keys {
+                if !key.is_null() {
+                    drop(unsafe { CString::from_raw(key) });
                 }
             }
+        }
 
-            if !list.values.is_null() {
-                let _values_box = Box::from_raw(ptr::slice_from_raw_parts_mut(list.values.cast::<MpvNodeOwned>(), len));
-            }
+        if !list.values.is_null() {
+            let values_ptr = ptr::slice_from_raw_parts_mut(list.values.cast::<MpvNodeOwned>(), len);
+            drop(unsafe { Box::from_raw(values_ptr) });
         }
     }
 }

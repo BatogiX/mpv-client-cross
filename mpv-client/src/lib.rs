@@ -8,12 +8,7 @@ mod logging;
 mod node;
 mod options;
 
-use crate::{
-    error::MpvError,
-    format::Sealed as _,
-    node::{BorrowedMpvNode, MpvNode},
-    options::CoercingString,
-};
+use crate::{error::MpvError, format::Sealed as _, node::BorrowedMpvNode, options::CoercingString};
 pub use error::{Error, Result};
 pub use format::{AsFormat, Format, OsdString};
 pub use mpv_client_sys::mpv_handle;

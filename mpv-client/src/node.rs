@@ -415,65 +415,31 @@ impl MpvNode for RawMpvNode {
 
 impl Drop for RawMpvNode {
     fn drop(&mut self) {
-        fn drop_mpv_node(mpv_node: &mut mpv_node) {
-            unsafe {
-                match Format::from_u32(mpv_node.format) {
-                    Format::String => {
-                        if mpv_node.u.string.is_null() {
-                            return;
-                        }
-                        drop(CString::from_raw(mpv_node.u.string));
+        unsafe {
+            match Format::from_u32(self.0.format) {
+                Format::String => {
+                    let string_ptr = self.0.u.string;
+                    if !string_ptr.is_null() {
+                        drop(CString::from_raw(string_ptr));
                     }
-                    Format::NodeArray | Format::NodeMap => {
-                        let list = mpv_node.u.list;
-                        if list.is_null() {
-                            return;
-                        }
-
-                        let list = Box::from_raw(list);
-                        let len = usize::try_from(list.num).unwrap_or(0);
-
-                        let keys = list.keys;
-                        if !keys.is_null() {
-                            for &key in slice::from_raw_parts(keys, len) {
-                                if !key.is_null() {
-                                    drop(CString::from_raw(key));
-                                }
-                            }
-                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(keys, len)));
-                        }
-
-                        let values = list.values;
-                        if !values.is_null() {
-                            for mpv_node_child in slice::from_raw_parts_mut(values, len) {
-                                drop_mpv_node(mpv_node_child);
-                            }
-                            drop(Box::from_raw(ptr::slice_from_raw_parts_mut(values, len)));
-                        }
-                    }
-                    Format::ByteArray => {
-                        let ba = mpv_node.u.ba;
-                        if ba.is_null() {
-                            return;
-                        }
-
-                        let ba = Box::from_raw(mpv_node.u.ba);
-                        let data = ba.data;
-                        if data.is_null() {
-                            return;
-                        }
-
-                        drop(Box::from_raw(ptr::slice_from_raw_parts_mut(data.cast::<u8>(), ba.size)));
-                    }
-                    _ => {}
                 }
+                Format::NodeArray | Format::NodeMap => {
+                    let list_ptr = self.0.u.list;
+                    if !list_ptr.is_null() {
+                        drop(MpvNodeList::from_raw(list_ptr));
+                    }
+                }
+                Format::ByteArray => {
+                    let ba_ptr = self.0.u.ba;
+                    if !ba_ptr.is_null() {
+                        drop(MpvNodeByteArray::from_raw(ba_ptr));
+                    }
+                }
+                _ => {}
             }
         }
-
-        drop_mpv_node(&mut self.0);
     }
 }
-
 #[allow(clippy::cast_possible_truncation)]
 #[allow(clippy::cast_sign_loss)]
 #[allow(clippy::cast_possible_wrap)]
@@ -542,4 +508,58 @@ fn mpv_byte_array_from_byte_array(byte_array: Vec<u8>) -> *mut mpv_byte_array {
     };
 
     Box::into_raw(Box::new(mpv_byte_array { data, size }))
+}
+
+#[repr(transparent)]
+struct MpvNodeList(*mut mpv_node_list);
+
+impl MpvNodeList {
+    const unsafe fn from_raw(ptr: *mut mpv_node_list) -> Self {
+        Self(ptr)
+    }
+}
+
+impl Drop for MpvNodeList {
+    fn drop(&mut self) {
+        unsafe {
+            let list = Box::from_raw(self.0);
+            let len = list.num as usize;
+
+            if !list.keys.is_null() {
+                let keys_slice = ptr::slice_from_raw_parts_mut(list.keys, len);
+                let keys_box = Box::from_raw(keys_slice);
+
+                for &key in &keys_box {
+                    if !key.is_null() {
+                        drop(CString::from_raw(key));
+                    }
+                }
+            }
+
+            if !list.values.is_null() {
+                let values_slice = ptr::slice_from_raw_parts_mut(list.values.cast::<RawMpvNode>(), len);
+                let _values_box = Box::from_raw(values_slice);
+            }
+        }
+    }
+}
+
+struct MpvNodeByteArray(*mut mpv_byte_array);
+
+impl MpvNodeByteArray {
+    const unsafe fn from_raw(ptr: *mut mpv_byte_array) -> Self {
+        Self(ptr)
+    }
+}
+
+impl Drop for MpvNodeByteArray {
+    fn drop(&mut self) {
+        unsafe {
+            let ba = Box::from_raw(self.0);
+            if !ba.data.is_null() {
+                let data_slice = ptr::slice_from_raw_parts_mut(ba.data.cast::<u8>(), ba.size);
+                drop(Box::from_raw(data_slice));
+            }
+        }
+    }
 }

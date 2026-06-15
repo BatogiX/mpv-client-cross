@@ -8,7 +8,7 @@ mod logging;
 mod node;
 mod options;
 
-use crate::{error::MpvError, format::Sealed as _, node::BorrowedMpvNode, options::CoercingString};
+use crate::{error::MpvError, format::Sealed as _, node::MpvNodeRef, options::CoercingString};
 pub use error::{Error, Result};
 pub use format::{AsFormat, Format, OsdString};
 pub use mpv_client_sys::mpv_handle;
@@ -1563,7 +1563,7 @@ impl Command<'_> {
 
     #[must_use]
     pub fn result(&self) -> Node {
-        BorrowedMpvNode(&unsafe { *self.0 }.result).to_node()
+        MpvNodeRef(&unsafe { *self.0 }.result).to_node()
     }
 }
 

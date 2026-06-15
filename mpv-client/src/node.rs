@@ -99,8 +99,8 @@ impl Display for Node {
     }
 }
 
-impl<'a, S: BuildHasher + Default> From<BorrowedMpvNode<'a>> for Node<S> {
-    fn from(borrowed: BorrowedMpvNode<'a>) -> Self {
+impl<'a, S: BuildHasher + Default> From<MpvNodeRef<'a>> for Node<S> {
+    fn from(borrowed: MpvNodeRef<'a>) -> Self {
         borrowed.to_node()
     }
 }
@@ -109,9 +109,9 @@ impl<'a, S: BuildHasher + Default> From<BorrowedMpvNode<'a>> for Node<S> {
 /// Cleaned by libmpv.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct BorrowedMpvNode<'a>(pub &'a mpv_node);
+pub struct MpvNodeRef<'a>(pub &'a mpv_node);
 
-impl BorrowedMpvNode<'_> {
+impl MpvNodeRef<'_> {
     pub const fn from_ptr(ptr: *const c_void) -> Option<Self> {
         if ptr.is_null() {
             None
@@ -149,12 +149,7 @@ impl BorrowedMpvNode<'_> {
                     unsafe { slice::from_raw_parts(values, len) }
                 };
 
-                Node::Array(
-                    values
-                        .iter()
-                        .map(|raw_node| BorrowedMpvNode(raw_node).to_node())
-                        .collect(),
-                )
+                Node::Array(values.iter().map(|raw_node| MpvNodeRef(raw_node).to_node()).collect())
             }
             Format::NodeMap => {
                 let list = unsafe { self.u.list };
@@ -187,7 +182,7 @@ impl BorrowedMpvNode<'_> {
                             None
                         } else {
                             let key = unsafe { CStr::from_ptr(k) }.to_string_lossy().into_owned();
-                            let node = BorrowedMpvNode(v).to_node();
+                            let node = MpvNodeRef(v).to_node();
                             Some((key, node))
                         }
                     })
@@ -233,10 +228,7 @@ impl BorrowedMpvNode<'_> {
         let len = usize::try_from(num).unwrap_or(0);
         let values = unsafe { slice::from_raw_parts(values, len) };
 
-        values
-            .iter()
-            .map(|mpv_node| BorrowedMpvNode(mpv_node).to_node())
-            .collect()
+        values.iter().map(|mpv_node| MpvNodeRef(mpv_node).to_node()).collect()
     }
 
     pub fn to_node_map<S: BuildHasher + Default>(self) -> HashMap<String, Node<S>, S> {
@@ -264,7 +256,7 @@ impl BorrowedMpvNode<'_> {
             }
 
             let key = unsafe { CStr::from_ptr(*key) }.to_string_lossy().into_owned();
-            let value = BorrowedMpvNode(value).to_node();
+            let value = MpvNodeRef(value).to_node();
             node_map.insert(key, value);
         }
 
@@ -290,7 +282,7 @@ impl BorrowedMpvNode<'_> {
     }
 }
 
-impl Deref for BorrowedMpvNode<'_> {
+impl Deref for MpvNodeRef<'_> {
     type Target = mpv_node;
 
     fn deref(&self) -> &Self::Target {
@@ -301,19 +293,19 @@ impl Deref for BorrowedMpvNode<'_> {
 /// Created by libmpv.
 /// Must be cleaned on drop via [`free_node_contents()`](Handle::free_node_contents()).
 #[repr(transparent)]
-pub struct ClonedMpvNode(mpv_node);
+pub struct MpvNodeCloned(mpv_node);
 
-impl ClonedMpvNode {
+impl MpvNodeCloned {
     pub const fn as_mut_ptr(&mut self) -> *mut mpv_node {
         &raw mut self.0
     }
 
-    pub const fn as_ref(&self) -> BorrowedMpvNode<'_> {
-        BorrowedMpvNode(&self.0)
+    pub const fn as_ref(&self) -> MpvNodeRef<'_> {
+        MpvNodeRef(&self.0)
     }
 }
 
-impl Default for ClonedMpvNode {
+impl Default for MpvNodeCloned {
     fn default() -> Self {
         Self(mpv_node {
             format: Format::None.as_u32(),
@@ -322,7 +314,7 @@ impl Default for ClonedMpvNode {
     }
 }
 
-impl Drop for ClonedMpvNode {
+impl Drop for MpvNodeCloned {
     fn drop(&mut self) {
         Handle::free_node_contents(&raw mut self.0);
     }
@@ -331,9 +323,9 @@ impl Drop for ClonedMpvNode {
 /// Created manually
 /// Must be cleaned on drop manually.
 #[repr(transparent)]
-pub struct OwnedMpvNode(mpv_node);
+pub struct MpvNodeOwned(mpv_node);
 
-impl OwnedMpvNode {
+impl MpvNodeOwned {
     pub const fn as_mut_ptr(&mut self) -> *mut mpv_node {
         &raw mut self.0
     }
@@ -366,15 +358,15 @@ impl OwnedMpvNode {
             }
             Node::Array(node_array) => {
                 mpv_node.format = Format::NodeArray.as_u32();
-                mpv_node.u.list = mpv_node_list_from_node_array(node_array);
+                mpv_node.u.list = MpvNodeListOwned::from_array(node_array);
             }
             Node::Map(node_map) => {
                 mpv_node.format = Format::NodeMap.as_u32();
-                mpv_node.u.list = mpv_node_list_from_node_map(node_map);
+                mpv_node.u.list = MpvNodeListOwned::from_map(node_map);
             }
             Node::ByteArray(byte_array) => {
                 mpv_node.format = Format::ByteArray.as_u32();
-                mpv_node.u.ba = mpv_byte_array_from_byte_array(byte_array);
+                mpv_node.u.ba = MpvNodeByteArrayOwned::from_byte_array(byte_array);
             }
         }
 
@@ -382,7 +374,7 @@ impl OwnedMpvNode {
     }
 }
 
-impl Default for OwnedMpvNode {
+impl Default for MpvNodeOwned {
     fn default() -> Self {
         Self(mpv_node {
             format: Format::None.as_u32(),
@@ -391,13 +383,13 @@ impl Default for OwnedMpvNode {
     }
 }
 
-impl<S: BuildHasher + Default> From<Node<S>> for OwnedMpvNode {
+impl<S: BuildHasher + Default> From<Node<S>> for MpvNodeOwned {
     fn from(node: Node<S>) -> Self {
         Self::from_node(node)
     }
 }
 
-impl Drop for OwnedMpvNode {
+impl Drop for MpvNodeOwned {
     fn drop(&mut self) {
         unsafe {
             match Format::from_u32(self.0.format) {
@@ -410,13 +402,13 @@ impl Drop for OwnedMpvNode {
                 Format::NodeArray | Format::NodeMap => {
                     let list_ptr = self.0.u.list;
                     if !list_ptr.is_null() {
-                        drop(OwnedMpvNodeList::from_raw(list_ptr));
+                        drop(MpvNodeListOwned::from_raw(list_ptr));
                     }
                 }
                 Format::ByteArray => {
                     let ba_ptr = self.0.u.ba;
                     if !ba_ptr.is_null() {
-                        drop(OwnedMpvNodeByteArray::from_raw(ba_ptr));
+                        drop(MpvNodeByteArrayOwned::from_raw(ba_ptr));
                     }
                 }
                 _ => {}
@@ -425,92 +417,78 @@ impl Drop for OwnedMpvNode {
     }
 }
 
-fn mpv_node_list_from_node_array<S: BuildHasher + Default>(node_array: Vec<Node<S>>) -> *mut mpv_node_list {
-    let len = node_array.len().min(i32::MAX as usize);
-    let keys = ptr::null_mut();
-    if len == 0 {
-        return Box::into_raw(Box::new(mpv_node_list {
-            num: 0,
-            values: ptr::null_mut(),
-            keys,
-        }));
-    }
-
-    let values = Box::into_raw(
-        node_array
-            .into_iter()
-            .take(len)
-            .map(OwnedMpvNode::from_node)
-            .collect::<Vec<OwnedMpvNode>>()
-            .into_boxed_slice(),
-    )
-    .cast();
-
-    let num = i32::try_from(len).unwrap_or(i32::MAX);
-    Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
-}
-
-fn mpv_node_list_from_node_map<S: BuildHasher + Default>(node_map: HashMap<String, Node<S>, S>) -> *mut mpv_node_list {
-    let len = node_map.len().min(i32::MAX as usize);
-    if len == 0 {
-        return Box::into_raw(Box::new(mpv_node_list {
-            num: 0,
-            values: ptr::null_mut(),
-            keys: ptr::null_mut(),
-        }));
-    }
-
-    let (keys, values): (Vec<*mut i8>, Vec<OwnedMpvNode>) = node_map
-        .into_iter()
-        .take(len)
-        .map(|(key, node)| {
-            (
-                CString::new(key).expect("CString::new() failed").into_raw(),
-                OwnedMpvNode::from_node(node),
-            )
-        })
-        .collect();
-
-    let (keys, values) = (
-        Box::into_raw(keys.into_boxed_slice()).cast(),
-        Box::into_raw(values.into_boxed_slice()).cast(),
-    );
-
-    let num = i32::try_from(len).unwrap_or(i32::MAX);
-    Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
-}
-
-fn mpv_byte_array_from_byte_array(byte_array: Vec<u8>) -> *mut mpv_byte_array {
-    let size = byte_array.len();
-    let data = if byte_array.is_empty() {
-        ptr::null_mut()
-    } else {
-        Box::into_raw(byte_array.into_boxed_slice()).cast()
-    };
-
-    Box::into_raw(Box::new(mpv_byte_array { data, size }))
-}
-
 #[repr(transparent)]
-struct OwnedMpvNodeList(*mut mpv_node_list);
+struct MpvNodeListOwned(*mut mpv_node_list);
 
-impl OwnedMpvNodeList {
+impl MpvNodeListOwned {
     const unsafe fn from_raw(ptr: *mut mpv_node_list) -> Self {
         Self(ptr)
     }
+
+    fn from_array<S: BuildHasher + Default>(node_array: Vec<Node<S>>) -> *mut mpv_node_list {
+        let len = node_array.len().min(i32::MAX as usize);
+        let keys = ptr::null_mut();
+        if len == 0 {
+            return Box::into_raw(Box::new(mpv_node_list {
+                num: 0,
+                values: ptr::null_mut(),
+                keys,
+            }));
+        }
+
+        let values = Box::into_raw(
+            node_array
+                .into_iter()
+                .take(len)
+                .map(MpvNodeOwned::from_node)
+                .collect::<Vec<MpvNodeOwned>>()
+                .into_boxed_slice(),
+        )
+        .cast();
+
+        let num = i32::try_from(len).unwrap_or(i32::MAX);
+        Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
+    }
+
+    fn from_map<S: BuildHasher + Default>(node_map: HashMap<String, Node<S>, S>) -> *mut mpv_node_list {
+        let len = node_map.len().min(i32::MAX as usize);
+        if len == 0 {
+            return Box::into_raw(Box::new(mpv_node_list {
+                num: 0,
+                values: ptr::null_mut(),
+                keys: ptr::null_mut(),
+            }));
+        }
+
+        let (keys, values): (Vec<*mut i8>, Vec<MpvNodeOwned>) = node_map
+            .into_iter()
+            .take(len)
+            .map(|(key, node)| {
+                (
+                    CString::new(key).expect("CString::new() failed").into_raw(),
+                    MpvNodeOwned::from_node(node),
+                )
+            })
+            .collect();
+
+        let (keys, values) = (
+            Box::into_raw(keys.into_boxed_slice()).cast(),
+            Box::into_raw(values.into_boxed_slice()).cast(),
+        );
+
+        let num = i32::try_from(len).unwrap_or(i32::MAX);
+        Box::into_raw(Box::new(mpv_node_list { num, keys, values }))
+    }
 }
 
-impl Drop for OwnedMpvNodeList {
+impl Drop for MpvNodeListOwned {
     fn drop(&mut self) {
         unsafe {
             let list = Box::from_raw(self.0);
             let len = usize::try_from(list.num).unwrap_or(0);
 
             if !list.keys.is_null() {
-                let keys_slice = ptr::slice_from_raw_parts_mut(list.keys, len);
-                let keys_box = Box::from_raw(keys_slice);
-
-                for &key in &keys_box {
+                for &key in &Box::from_raw(ptr::slice_from_raw_parts_mut(list.keys, len)) {
                     if !key.is_null() {
                         drop(CString::from_raw(key));
                     }
@@ -518,22 +496,32 @@ impl Drop for OwnedMpvNodeList {
             }
 
             if !list.values.is_null() {
-                let values_slice = ptr::slice_from_raw_parts_mut(list.values.cast::<OwnedMpvNode>(), len);
-                let _values_box = Box::from_raw(values_slice);
+                let _values_box = Box::from_raw(ptr::slice_from_raw_parts_mut(list.values.cast::<MpvNodeOwned>(), len));
             }
         }
     }
 }
 
-struct OwnedMpvNodeByteArray(*mut mpv_byte_array);
+struct MpvNodeByteArrayOwned(*mut mpv_byte_array);
 
-impl OwnedMpvNodeByteArray {
+impl MpvNodeByteArrayOwned {
     const unsafe fn from_raw(ptr: *mut mpv_byte_array) -> Self {
         Self(ptr)
     }
+
+    fn from_byte_array(byte_array: Vec<u8>) -> *mut mpv_byte_array {
+        let size = byte_array.len();
+        let data = if byte_array.is_empty() {
+            ptr::null_mut()
+        } else {
+            Box::into_raw(byte_array.into_boxed_slice()).cast()
+        };
+
+        Box::into_raw(Box::new(mpv_byte_array { data, size }))
+    }
 }
 
-impl Drop for OwnedMpvNodeByteArray {
+impl Drop for MpvNodeByteArrayOwned {
     fn drop(&mut self) {
         unsafe {
             let ba = Box::from_raw(self.0);

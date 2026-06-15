@@ -1,6 +1,6 @@
 use crate::{
     Handle,
-    node::{BorrowedMpvNode, ClonedMpvNode, Node, OwnedMpvNode},
+    node::{MpvNodeCloned, MpvNodeOwned, MpvNodeRef, Node},
 };
 use ::std::hash::BuildHasher;
 use mpv_client_sys::{
@@ -189,7 +189,7 @@ impl Sealed for f64 {
 
 impl<S: BuildHasher + Default> Sealed for Node<S> {
     fn from_ptr(ptr: *const c_void) -> Self {
-        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
+        let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::None;
         };
 
@@ -197,12 +197,12 @@ impl<S: BuildHasher + Default> Sealed for Node<S> {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
-        let mut mpv_node = OwnedMpvNode::from_node(self);
+        let mut mpv_node = MpvNodeOwned::from_node(self);
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
-        let mut mpv_node = ClonedMpvNode::default();
+        let mut mpv_node = MpvNodeCloned::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node())
     }
@@ -210,7 +210,7 @@ impl<S: BuildHasher + Default> Sealed for Node<S> {
 
 impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
     fn from_ptr(ptr: *const c_void) -> Self {
-        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
+        let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::default();
         };
 
@@ -218,12 +218,12 @@ impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
-        let mut mpv_node = OwnedMpvNode::from_node(Node::Array(self));
+        let mut mpv_node = MpvNodeOwned::from_node(Node::Array(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
-        let mut mpv_node = ClonedMpvNode::default();
+        let mut mpv_node = MpvNodeCloned::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node_array())
     }
@@ -231,7 +231,7 @@ impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
 
 impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
     fn from_ptr(ptr: *const c_void) -> Self {
-        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
+        let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::default();
         };
 
@@ -239,12 +239,12 @@ impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
-        let mut mpv_node = OwnedMpvNode::from_node(Node::<S>::Map(self));
+        let mut mpv_node = MpvNodeOwned::from_node(Node::<S>::Map(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
-        let mut mpv_node = ClonedMpvNode::default();
+        let mut mpv_node = MpvNodeCloned::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node_map())
     }
@@ -252,7 +252,7 @@ impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
 
 impl Sealed for Vec<u8> {
     fn from_ptr(ptr: *const c_void) -> Self {
-        let Some(mpv_node) = BorrowedMpvNode::from_ptr(ptr) else {
+        let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::default();
         };
 
@@ -260,12 +260,12 @@ impl Sealed for Vec<u8> {
     }
 
     fn to_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(self, fun: F) -> crate::Result<()> {
-        let mut mpv_node = OwnedMpvNode::from_node(Node::<RandomState>::ByteArray(self));
+        let mut mpv_node = MpvNodeOwned::from_node(Node::<RandomState>::ByteArray(self));
         fun(mpv_node.as_mut_ptr().cast::<c_void>())
     }
 
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self> {
-        let mut mpv_node = ClonedMpvNode::default();
+        let mut mpv_node = MpvNodeCloned::default();
         fun(mpv_node.as_mut_ptr().cast())?;
         Ok(mpv_node.as_ref().to_node_byte_array())
     }

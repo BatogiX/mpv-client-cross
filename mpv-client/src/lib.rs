@@ -1241,39 +1241,36 @@ impl Event<'_> {
 impl fmt::Display for Event<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let event_name = Handle::event_name(u32::from(self)).unwrap_or("unknown");
+
         match self {
             Event::None => Ok(()),
             Event::LogMessage(log_message) => write!(f, "{event_name}: {log_message}"),
             Event::GetPropertyReply(error, reply, property) => {
-                write!(f, "{event_name}: ")?;
+                write!(f, "{event_name}: (")?;
                 if let Err(error) = error {
-                    write!(f, "(err: {error:?}, reply: {reply}): ")?;
-                } else {
-                    write!(f, "(reply: {reply}): ")?;
+                    write!(f, "err: {error:?}, ")?;
                 }
+                write!(f, "reply: {reply}): ")?;
 
                 if let Some(property) = property {
                     write!(f, "{property}")
                 } else {
-                    write!(f, "None")
+                    f.write_str("None")
                 }
             }
             Event::SetPropertyReply(error, reply) => {
-                write!(f, "{event_name}: ")?;
+                write!(f, "{event_name}: (")?;
                 if let Err(error) = error {
-                    write!(f, "(err: {error:?}, reply: {reply}): ")
-                } else {
-                    write!(f, "(reply: {reply}): ")
+                    write!(f, "err: {error:?}, ")?;
                 }
+                write!(f, "reply: {reply}): ")
             }
             Event::CommandReply(error, reply, command) => {
-                write!(f, "{event_name}: ")?;
+                write!(f, "{event_name}: (")?;
                 if let Err(error) = error {
-                    write!(f, "(err: {error:?}, reply: {reply}): ")?;
-                } else {
-                    write!(f, "(reply: {reply}): ")?;
+                    write!(f, "err: {error:?}, ")?;
                 }
-                write!(f, "{command}")
+                write!(f, "reply: {reply}): {command}")
             }
             Event::StartFile(start_file) => write!(f, "{event_name}: {start_file}"),
             Event::EndFile(end_file) => write!(f, "{event_name}: {end_file}"),
@@ -1323,28 +1320,54 @@ impl Property<'_> {
 
 impl fmt::Display for Property<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let format = self.format();
-        let data = match format {
-            Format::String => self.data::<String>().map(|s| format!("\"{s}\"")),
-            Format::OsdString => self.data::<OsdString>().map(|s| format!("\"{}\"", s.0)),
-            Format::Bool => self.data::<bool>().map(|v| v.to_string()),
-            Format::Int => self.data::<i64>().map(|v| v.to_string()),
-            Format::Double => self.data::<f64>().map(|v| v.to_string()),
-            Format::Node => self.data::<Node>().map(|v| v.to_string()),
-            Format::NodeArray => self.data::<Vec<Node>>().map(|v| format!("{v:#?}")),
-            Format::NodeMap => self.data::<HashMap<String, Node>>().map(|v| format!("{v:#?}")),
-            Format::ByteArray => self.data::<Vec<u8>>().map(|v| format!("{v:#?}")),
-            Format::None | Format::Unknown(_) => None,
-        }
-        .unwrap_or_else(|| "None".to_owned());
-
         write!(
             f,
-            "Property {{\n    name: \"{}\"\n    format: {}\n    data: {}\n}}",
+            "Property {{\n    name: \"{}\"\n    format: {}\n    data: ",
             self.name(),
-            format,
-            data
-        )
+            self.format()
+        )?;
+
+        match self.format() {
+            Format::String => match self.data::<String>() {
+                Some(s) => write!(f, "\"{s}\""),
+                None => f.write_str("None"),
+            },
+            Format::OsdString => match self.data::<OsdString>() {
+                Some(s) => write!(f, "\"{}\"", s.0),
+                None => f.write_str("None"),
+            },
+            Format::Bool => match self.data::<bool>() {
+                Some(v) => write!(f, "{v}"),
+                None => f.write_str("None"),
+            },
+            Format::Int => match self.data::<i64>() {
+                Some(v) => write!(f, "{v}"),
+                None => f.write_str("None"),
+            },
+            Format::Double => match self.data::<f64>() {
+                Some(v) => write!(f, "{v}"),
+                None => f.write_str("None"),
+            },
+            Format::Node => match self.data::<Node>() {
+                Some(v) => write!(f, "{v}"),
+                None => f.write_str("None"),
+            },
+            Format::NodeArray => match self.data::<Vec<Node>>() {
+                Some(v) => write!(f, "{v:#?}"),
+                None => f.write_str("None"),
+            },
+            Format::NodeMap => match self.data::<HashMap<String, Node>>() {
+                Some(v) => write!(f, "{v:#?}"),
+                None => f.write_str("None"),
+            },
+            Format::ByteArray => match self.data::<Vec<u8>>() {
+                Some(v) => write!(f, "{v:#?}"),
+                None => f.write_str("None"),
+            },
+            Format::None | Format::Unknown(_) => f.write_str("None"),
+        }?;
+
+        f.write_str("\n}")
     }
 }
 
@@ -1408,7 +1431,7 @@ impl StartFile<'_> {
 
 impl fmt::Display for StartFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("start file")
+        write!(f, "{}", self.playlist_entry_id())
     }
 }
 
@@ -1466,7 +1489,19 @@ impl EndFile<'_> {
 
 impl fmt::Display for EndFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("end file")
+        write!(f, "reason: {}", self.reason())?;
+
+        if let Err(error) = self.error() {
+            write!(f, ", error: {error}")?;
+        }
+
+        write!(
+            f,
+            ", playlist_entry_id: {}, playlist_insert_id: {}, playlist_insert_num_entries: {}",
+            self.playlist_entry_id(),
+            self.playlist_insert_id(),
+            self.playlist_insert_num_entries()
+        )
     }
 }
 
@@ -1508,7 +1543,7 @@ impl<'h> ClientMessage<'h> {
 
 impl fmt::Display for ClientMessage<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("client-message")
+        write!(f, "{:?}", self.args())
     }
 }
 
@@ -1539,7 +1574,7 @@ impl<'h> Hook<'h> {
 
 impl fmt::Display for Hook<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(self.name())
+        write!(f, "name: {}, id: {}", self.name(), self.id())
     }
 }
 
@@ -1607,6 +1642,19 @@ pub enum EndFileReason {
     Error = mpv_end_file_reason_MPV_END_FILE_REASON_ERROR,
     Redirect = mpv_end_file_reason_MPV_END_FILE_REASON_REDIRECT,
     Unknown(u32),
+}
+
+impl Display for EndFileReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Eof => f.write_str("End of file"),
+            Self::Stop => f.write_str("Stop"),
+            Self::Quit => f.write_str("Quit"),
+            Self::Error => f.write_str("Error"),
+            Self::Redirect => f.write_str("Redirect"),
+            Self::Unknown(v) => write!(f, "Unknown: {v}"),
+        }
+    }
 }
 
 impl From<u32> for EndFileReason {

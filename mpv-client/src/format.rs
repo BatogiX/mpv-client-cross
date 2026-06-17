@@ -22,7 +22,7 @@ use std::{
 };
 
 #[allow(private_bounds)]
-pub trait AsFormat: Sealed {
+pub trait AsFormat<S: BuildHasher + Default = RandomState>: Sealed<S> {
     const FORMAT: Format;
 }
 
@@ -50,15 +50,15 @@ impl AsFormat for f64 {
     const FORMAT: Format = Format::Double;
 }
 
-impl<S: BuildHasher + Default> AsFormat for Node<S> {
+impl<S: BuildHasher + Default> AsFormat<S> for Node<S> {
     const FORMAT: Format = Format::Node;
 }
 
-impl<S: BuildHasher + Default> AsFormat for Vec<Node<S>> {
+impl<S: BuildHasher + Default> AsFormat<S> for Vec<Node<S>> {
     const FORMAT: Format = Format::Node;
 }
 
-impl<S: BuildHasher + Default> AsFormat for HashMap<String, Node<S>, S> {
+impl<S: BuildHasher + Default> AsFormat<S> for HashMap<String, Node<S>, S> {
     const FORMAT: Format = Format::Node;
 }
 
@@ -66,7 +66,7 @@ impl AsFormat for Vec<u8> {
     const FORMAT: Format = Format::Node;
 }
 
-pub trait Sealed: Sized + Default {
+pub trait Sealed<S: BuildHasher + Default = RandomState>: Sized + Default {
     fn from_ptr(ptr: *const c_void) -> Self;
 
     /// # Errors
@@ -77,7 +77,7 @@ pub trait Sealed: Sized + Default {
     /// If the FFI callback fails or the stored value cannot be recovered.
     fn from_mpv<F: Fn(*mut c_void) -> crate::Result<()>>(fun: F) -> crate::Result<Self>;
 
-    fn from_node(node: Node) -> crate::Result<Self>;
+    fn from_node(node: Node<S>) -> crate::Result<Self>;
 }
 
 impl Sealed for () {
@@ -229,7 +229,7 @@ impl Sealed for f64 {
     }
 }
 
-impl<S: BuildHasher + Default> Sealed for Node<S> {
+impl<S: BuildHasher + Default> Sealed<S> for Node<S> {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::None;
@@ -249,33 +249,12 @@ impl<S: BuildHasher + Default> Sealed for Node<S> {
         Ok(mpv_node.as_ref().to_node())
     }
 
-    fn from_node(node: Node) -> crate::Result<Self> {
-        match node {
-            Node::None => Ok(Self::None),
-            Node::String(s) => Ok(Self::String(s)),
-            Node::Bytes(b) => Ok(Self::Bytes(b)),
-            Node::Int(i) => Ok(Self::Int(i)),
-            Node::Double(d) => Ok(Self::Double(d)),
-            Node::Bool(b) => Ok(Self::Bool(b)),
-            Node::Array(a) => {
-                let vec = a
-                    .into_iter()
-                    .map(Sealed::from_node)
-                    .collect::<crate::Result<Vec<Self>>>()?;
-                Ok(Self::Array(vec))
-            }
-            Node::Map(m) => {
-                let mut map = HashMap::with_capacity_and_hasher(m.len(), S::default());
-                for (k, v) in m {
-                    map.insert(k, Sealed::from_node(v)?);
-                }
-                Ok(Self::Map(map))
-            }
-        }
+    fn from_node(node: Self) -> crate::Result<Self> {
+        Ok(node)
     }
 }
 
-impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
+impl<S: BuildHasher + Default> Sealed<S> for Vec<Node<S>> {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::default();
@@ -295,16 +274,16 @@ impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
         Ok(mpv_node.as_ref().to_node_array())
     }
 
-    fn from_node(node: Node) -> crate::Result<Self> {
+    fn from_node(node: Node<S>) -> crate::Result<Self> {
         if let Node::Array(array) = node {
-            array.into_iter().map(Sealed::from_node).collect()
+            Ok(array)
         } else {
             Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
 
-impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
+impl<S: BuildHasher + Default> Sealed<S> for HashMap<String, Node<S>, S> {
     fn from_ptr(ptr: *const c_void) -> Self {
         let Some(mpv_node) = MpvNodeRef::from_ptr(ptr) else {
             return Self::default();
@@ -324,13 +303,9 @@ impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
         Ok(mpv_node.as_ref().to_node_map())
     }
 
-    fn from_node(node: Node) -> crate::Result<Self> {
+    fn from_node(node: Node<S>) -> crate::Result<Self> {
         if let Node::Map(map) = node {
-            let mut new_map = Self::with_capacity_and_hasher(map.len(), S::default());
-            for (k, v) in map {
-                new_map.insert(k, Sealed::from_node(v)?);
-            }
-            Ok(new_map)
+            Ok(map)
         } else {
             Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
@@ -425,7 +400,7 @@ impl Format {
     }
 
     #[must_use]
-    pub const fn from_node(node: &Node) -> Self {
+    pub const fn from_node<S: BuildHasher + Default>(node: &Node<S>) -> Self {
         match node {
             Node::None => Self::None,
             Node::String(_) => Self::String,

@@ -30,7 +30,7 @@ name = "mpv_plugin"
 crate-type = ["cdylib"]
 
 [dependencies]
-mpv-client = { version = "3.0", package = "mpv-client-cross" }
+mpv-client = { version = "4.0", package = "mpv-client-cross" }
 ```
 
 And then the code `src/lib.rs`:
@@ -58,7 +58,7 @@ unsafe extern "C" fn mpv_open_cplugin(handle: *mut mpv_handle) -> i32 {
 or
 
 ```toml
-mpv-client = { version = "3.0", package = "mpv-client-cross", features = ["macros"] }
+mpv-client = { version = "4.0", package = "mpv-client-cross", features = ["macros"] }
 ```
 
 ```rust

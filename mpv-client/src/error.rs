@@ -1,4 +1,4 @@
-use crate::Handle;
+use crate::{Format, Handle};
 use mpv_client_sys::{
     mpv_error, mpv_error_MPV_ERROR_AO_INIT_FAILED, mpv_error_MPV_ERROR_COMMAND, mpv_error_MPV_ERROR_EVENT_QUEUE_FULL,
     mpv_error_MPV_ERROR_GENERIC, mpv_error_MPV_ERROR_INVALID_PARAMETER, mpv_error_MPV_ERROR_LOADING_FAILED,
@@ -27,9 +27,8 @@ pub enum Error {
     #[error("{0}")]
     Utf8(#[from] Utf8Error),
 
-    // #[error("unknown or invalid mpv format type: {0}")]
-    #[error("unknown or invalid mpv format type")]
-    FormatMismatch(),
+    #[error("format mismatch ({0})")]
+    FormatMismatch(Format),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

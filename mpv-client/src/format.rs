@@ -132,7 +132,7 @@ impl Sealed for String {
         if let Node::String(string) = node {
             Ok(string)
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -176,7 +176,7 @@ impl Sealed for bool {
         if let Node::Bool(boolean) = node {
             Ok(boolean)
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -200,7 +200,7 @@ impl Sealed for i64 {
         if let Node::Int(int64) = node {
             Ok(int64)
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -224,7 +224,7 @@ impl Sealed for f64 {
         if let Node::Double(float64) = node {
             Ok(float64)
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -299,7 +299,7 @@ impl<S: BuildHasher + Default> Sealed for Vec<Node<S>> {
         if let Node::Array(array) = node {
             array.into_iter().map(Sealed::from_node).collect()
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -332,7 +332,7 @@ impl<S: BuildHasher + Default> Sealed for HashMap<String, Node<S>, S> {
             }
             Ok(new_map)
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -361,7 +361,7 @@ impl Sealed for Vec<u8> {
         if let Node::Bytes(bytes) = node {
             Ok(bytes)
         } else {
-            Err(crate::Error::FormatMismatch())
+            Err(crate::Error::FormatMismatch(Format::from_node(&node)))
         }
     }
 }
@@ -421,6 +421,20 @@ impl Format {
             mpv_format_MPV_FORMAT_NODE_MAP => Self::Map,
             mpv_format_MPV_FORMAT_BYTE_ARRAY => Self::Bytes,
             value => Self::Unknown(value),
+        }
+    }
+
+    #[must_use]
+    pub const fn from_node(node: &Node) -> Self {
+        match node {
+            Node::None => Self::None,
+            Node::String(_) => Self::String,
+            Node::Int(_) => Self::Int,
+            Node::Double(_) => Self::Double,
+            Node::Bool(_) => Self::Bool,
+            Node::Bytes(_) => Self::Bytes,
+            Node::Array(_) => Self::Array,
+            Node::Map(_) => Self::Map,
         }
     }
 }
